@@ -6,7 +6,7 @@ import {
 import { Chess } from 'chess.js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 
 const COLORS = {
   bg: '#080d18', panel: '#111a2b', panel2: '#172338', line: '#26364d',
