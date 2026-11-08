@@ -4,6 +4,7 @@ import {
   StatusBar, ActivityIndicator, useWindowDimensions, Animated
 } from 'react-native';
 import { Chess } from 'chess.js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const COLORS = {
   bg: '#080d18', panel: '#111a2b', panel2: '#172338', line: '#26364d',
@@ -30,6 +31,39 @@ function evaluateWhite(game) {
   if (game.isCheckmate()) return game.turn() === 'w' ? -100000 : 100000;
   if (game.isDraw()) return 0;
   const board = game.board();
+
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem('chess-coach-rating-v1').then(raw => {
+      if (!alive || !raw) return;
+      const saved = JSON.parse(raw);
+      if (Number.isFinite(saved.playerElo)) setPlayerElo(saved.playerElo);
+      if (Number.isFinite(saved.ratedGames)) setRatedGames(saved.ratedGames);
+      if (saved.lastResult) setLastResult(saved.lastResult);
+    }).catch(() => {}).finally(() => { if (alive) setRatingReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!ratingReady) return;
+    AsyncStorage.setItem('chess-coach-rating-v1', JSON.stringify({ playerElo, ratedGames, lastResult })).catch(() => {});
+  }, [playerElo, ratedGames, lastResult, ratingReady]);
+
+  useEffect(() => {
+    if (tab !== 'Play' || !game.isGameOver() || !ratingReady) return;
+    const key = game.history().join(' ');
+    if (!key || ratedGameKey.current === key) return;
+    ratedGameKey.current = key;
+    const opponentElo = level === 'Easy' ? 650 : level === 'Medium' ? 1000 : 1450;
+    const score = game.isDraw() ? 0.5 : game.turn() === 'b' ? 1 : 0;
+    const expected = 1 / (1 + Math.pow(10, (opponentElo - playerElo) / 400));
+    const delta = Math.round(32 * (score - expected));
+    const nextRating = Math.max(100, playerElo + delta);
+    const result = score === 0.5 ? 'Draw' : score === 1 ? 'Win' : 'Loss';
+    setPlayerElo(nextRating);
+    setRatedGames(n => n + 1);
+    setLastResult({ result, delta, opponentElo, level, moves: game.history().length, date: new Date().toISOString() });
+  }, [game, tab, level, playerElo, ratingReady]);
   let score = 0;
   for (let r = 0; r < 8; r += 1) {
     for (let c = 0; c < 8; c += 1) {
@@ -131,12 +165,50 @@ export default function App() {
   const [engineLabel, setEngineLabel] = useState('Ready to play');
   const [animatedPiece, setAnimatedPiece] = useState(null);
   const [analysis, setAnalysis] = useState(null);
+  const [playerElo, setPlayerElo] = useState(800);
+  const [ratedGames, setRatedGames] = useState(0);
+  const [lastResult, setLastResult] = useState(null);
+  const [ratingReady, setRatingReady] = useState(false);
+  const ratedGameKey = useRef('');
   const [analyzing, setAnalyzing] = useState(false);
   const animationPosition = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const aiBusy = useRef(false);
   const currentLesson = LESSONS[lessonIndex] || null;
   const boardSize = Math.min(width - 60, 430);
   const board = game.board();
+
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem('chess-coach-rating-v1').then(raw => {
+      if (!alive || !raw) return;
+      const saved = JSON.parse(raw);
+      if (Number.isFinite(saved.playerElo)) setPlayerElo(saved.playerElo);
+      if (Number.isFinite(saved.ratedGames)) setRatedGames(saved.ratedGames);
+      if (saved.lastResult) setLastResult(saved.lastResult);
+    }).catch(() => {}).finally(() => { if (alive) setRatingReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!ratingReady) return;
+    AsyncStorage.setItem('chess-coach-rating-v1', JSON.stringify({ playerElo, ratedGames, lastResult })).catch(() => {});
+  }, [playerElo, ratedGames, lastResult, ratingReady]);
+
+  useEffect(() => {
+    if (tab !== 'Play' || !game.isGameOver() || !ratingReady) return;
+    const key = game.history().join(' ');
+    if (!key || ratedGameKey.current === key) return;
+    ratedGameKey.current = key;
+    const opponentElo = level === 'Easy' ? 650 : level === 'Medium' ? 1000 : 1450;
+    const score = game.isDraw() ? 0.5 : game.turn() === 'b' ? 1 : 0;
+    const expected = 1 / (1 + Math.pow(10, (opponentElo - playerElo) / 400));
+    const delta = Math.round(32 * (score - expected));
+    const nextRating = Math.max(100, playerElo + delta);
+    const result = score === 0.5 ? 'Draw' : score === 1 ? 'Win' : 'Loss';
+    setPlayerElo(nextRating);
+    setRatedGames(n => n + 1);
+    setLastResult({ result, delta, opponentElo, level, moves: game.history().length, date: new Date().toISOString() });
+  }, [game, tab, level, playerElo, ratingReady]);
 
   const status = game.isCheckmate()
     ? 'Checkmate · ' + (game.turn() === 'w' ? 'Black' : 'White') + ' wins'
@@ -259,6 +331,7 @@ export default function App() {
   }
 
   function restart() {
+    ratedGameKey.current = '';
     const next = freshGame();
     setGame(next);
     setHistory([]);
@@ -396,7 +469,7 @@ export default function App() {
                 <Text style={styles.playerName}>Chess Coach AI</Text>
                 <Text style={styles.playerMeta}>{level} level · Black pieces</Text>
               </View>
-              <Text style={styles.playerRating}>ENGINE</Text>
+              <Text style={styles.playerRating}>{level === 'Easy' ? '650 EST.' : level === 'Medium' ? '1000 EST.' : '1450 EST.'}</Text>
             </View>
           )}
 
@@ -414,15 +487,15 @@ export default function App() {
                   style={[styles.square, {
                     width: boardSize / 8,
                     height: boardSize / 8,
-                    backgroundColor: isSelected ? '#d6c45e' : light ? COLORS.light : COLORS.dark
+                    backgroundColor: isSelected ? '#d6c45e' : light ? '#e7c99b' : '#93633e'
                   }]}
                 >
                   {isTarget && <View style={[styles.target, piece && styles.targetCapture]} />}
                   {!!piece && !(animatedPiece && animatedPiece.from === square) && (
                     <Text style={[styles.piece, {
                       fontSize: Math.max(22, boardSize / 12),
-                      color: piece.color === 'w' ? '#fffdf5' : '#17211c',
-                      textShadowColor: piece.color === 'w' ? '#24352b' : '#f4f0e5'
+                      color: piece.color === 'w' ? '#f5dfb5' : '#54351f',
+                      textShadowColor: piece.color === 'w' ? '#6f4a28' : '#e0b77c'
                     }]}>{PIECES[piece.color + piece.type.toUpperCase()]}</Text>
                   )}
                   {c === 0 && <Text style={styles.rank}>{8 - r}</Text>}
@@ -432,23 +505,50 @@ export default function App() {
             }))}
             {animatedPiece && (
               <Animated.View pointerEvents="none" style={[styles.movingPiece, { width: boardSize / 8, height: boardSize / 8 }, { transform: animationPosition.getTranslateTransform() }]}>
-                <Text style={[styles.piece, { fontSize: Math.max(22, boardSize / 12), color: animatedPiece.color === 'w' ? '#fffdf5' : '#17211c', textShadowColor: animatedPiece.color === 'w' ? '#24352b' : '#f4f0e5' }]}>{animatedPiece.glyph}</Text>
+                <Text style={[styles.piece, { fontSize: Math.max(22, boardSize / 12), color: animatedPiece.color === 'w' ? '#f5dfb5' : '#54351f', textShadowColor: animatedPiece.color === 'w' ? '#6f4a28' : '#e0b77c' }]}>{animatedPiece.glyph}</Text>
               </Animated.View>
             )}
           </View>
 
           {tab === 'Review' && (
-            <View style={{ width: '100%', gap: 8, marginTop: 10 }}>
+            <View style={{ width: '100%', gap: 10, marginTop: 12 }}>
+              <View style={styles.ratingHero}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.ratingEyebrow}>YOUR RAPID RATING</Text>
+                  <Text style={styles.ratingNumber}>{playerElo}</Text>
+                  <Text style={styles.ratingCaption}>{ratedGames} rated {ratedGames === 1 ? 'game' : 'games'} · provisional</Text>
+                </View>
+                <View style={styles.ratingDivider} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.ratingEyebrow}>STOCKFISH</Text>
+                  <Text style={styles.engineRating}>3000+*</Text>
+                  <Text style={styles.ratingCaption}>Estimated engine equivalent</Text>
+                </View>
+              </View>
+              {lastResult && (
+                <View style={styles.lastGameCard}>
+                  <View style={styles.difficultyHeading}>
+                    <Text style={styles.sectionTitle}>Last rated game</Text>
+                    <Text style={[styles.resultPill, lastResult.result === 'Win' ? styles.winPill : lastResult.result === 'Loss' ? styles.lossPill : styles.drawPill]}>{lastResult.result.toUpperCase()}</Text>
+                  </View>
+                  <View style={styles.ratingChangeRow}>
+                    <Text style={styles.ratingChangeLabel}>Rating change</Text>
+                    <Text style={[styles.ratingChange, lastResult.delta >= 0 ? { color: COLORS.green } : { color: COLORS.red }]}>{lastResult.delta > 0 ? '+' : ''}{lastResult.delta} Elo</Text>
+                  </View>
+                  <Text style={styles.helper}>Against {lastResult.level} AI · {lastResult.moves} half-moves · opponent estimate {lastResult.opponentElo}</Text>
+                </View>
+              )}
               <Pressable onPress={analyzeCurrentPosition} disabled={analyzing} style={styles.primaryButton}>
-                {analyzing ? <ActivityIndicator color="#10180d" /> : <Text style={styles.primaryText}>Analyse position with Stockfish</Text>}
+                {analyzing ? <ActivityIndicator color="#10180d" /> : <Text style={styles.primaryText}>Analyse current position with Stockfish</Text>}
               </Pressable>
               {analysis && (
                 <View style={styles.analysisCard}>
-                  <Text style={styles.coachTitle}>Stockfish · depth {analysis.depth}</Text>
+                  <Text style={styles.coachTitle}>STOCKFISH · DEPTH {analysis.depth}</Text>
                   <Text style={styles.coachBody}>Evaluation: {analysis.mate !== null && analysis.mate !== undefined ? 'Mate in ' + analysis.mate : (Number(analysis.evaluation) > 0 ? '+' : '') + Number(analysis.evaluation || 0).toFixed(2)} · Best move: {analysis.bestmove || 'Not available'}</Text>
-                  {!!analysis.continuation && <Text style={styles.helper}>Line: {analysis.continuation}</Text>}
+                  {!!analysis.continuation && <Text style={styles.helper}>Best line: {analysis.continuation}</Text>}
                 </View>
               )}
+              <Text style={styles.ratingFootnote}>Player Elo updates only when a game against the computer is completed. AI opponent ratings are estimates for the selected difficulty; Stockfish 3000+ is a rough strength equivalent, not an official rating.</Text>
             </View>
           )}
 
@@ -457,7 +557,7 @@ export default function App() {
               <View style={styles.avatarYou}><Text style={styles.avatarText}>YOU</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.playerName}>You</Text>
-                <Text style={styles.playerMeta}>White pieces</Text>
+                <Text style={styles.playerMeta}>White pieces · {playerElo} Elo</Text>
               </View>
               {aiThinking ? <ActivityIndicator color={COLORS.green} /> : <Text style={styles.turnLabel}>{game.turn() === 'w' && !game.isGameOver() ? 'YOUR TURN' : game.isGameOver() ? 'FINISHED' : 'WAITING'}</Text>}
             </View>
@@ -630,5 +730,20 @@ const styles = StyleSheet.create({
   licenseNote: { color: '#78869e', fontSize: 9, lineHeight: 14 },
   footer: { width: '100%', textAlign: 'center', fontSize: 9, letterSpacing: 2, color: '#59667c', marginTop: 2 },
   movingPiece: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  ratingHero: { width: '100%', flexDirection: 'row', alignItems: 'center', backgroundColor: '#172a22', borderRadius: 16, borderWidth: 1, borderColor: '#355640', padding: 16, gap: 14 },
+  ratingEyebrow: { color: '#a9c7ad', fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
+  ratingNumber: { color: '#f4f7fb', fontSize: 38, fontWeight: '900', letterSpacing: -1.5, marginTop: 4 },
+  engineRating: { color: COLORS.gold, fontSize: 25, fontWeight: '900', marginTop: 9 },
+  ratingCaption: { color: '#9fb2a3', fontSize: 9, lineHeight: 14, marginTop: 3 },
+  ratingDivider: { width: 1, height: 58, backgroundColor: '#45614c' },
+  lastGameCard: { width: '100%', backgroundColor: COLORS.panel, borderWidth: 1, borderColor: COLORS.line, borderRadius: 14, padding: 14, gap: 10 },
+  resultPill: { overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8, fontSize: 9, fontWeight: '900' },
+  winPill: { color: '#baf59a', backgroundColor: '#244b32' },
+  lossPill: { color: '#ffaaaa', backgroundColor: '#4b292d' },
+  drawPill: { color: '#f5d58d', backgroundColor: '#4a3d25' },
+  ratingChangeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  ratingChangeLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '700' },
+  ratingChange: { fontSize: 16, fontWeight: '900' },
+  ratingFootnote: { color: '#7f8da3', fontSize: 9, lineHeight: 14 },
   analysisCard: { width: '100%', backgroundColor: COLORS.panel2, borderRadius: 12, borderWidth: 1, borderColor: COLORS.line, padding: 12, gap: 6 },
 });

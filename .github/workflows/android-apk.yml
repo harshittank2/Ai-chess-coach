@@ -34,7 +34,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Install Expo SDK 53 native modules at project root
-        run: npx expo install expo-asset expo-constants expo-file-system expo-font expo-keep-awake
+        run: npx expo install expo-asset expo-constants expo-file-system expo-font expo-keep-awake @react-native-async-storage/async-storage
 
       - name: Align dependencies with Expo SDK
         run: npx expo install --fix
@@ -43,7 +43,7 @@ jobs:
         run: npx expo-doctor
 
       - name: Verify native module packages
-        run: node -e "for (const n of ['expo-asset','expo-constants','expo-file-system','expo-font','expo-keep-awake']) { console.log(n + ' => ' + require.resolve(n + '/package.json')); }"
+        run: node -e "for (const n of ['expo-asset','expo-constants','expo-file-system','expo-font','expo-keep-awake','@react-native-async-storage/async-storage']) { console.log(n + ' => ' + require.resolve(n + '/package.json')); }"
 
       - name: Generate clean Android native project
         run: npx expo prebuild --platform android --clean --non-interactive
