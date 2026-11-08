@@ -13,48 +13,49 @@ jobs:
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
-      - name: Checkout project
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Configure Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+          cache: npm
 
-      - name: Setup Java
+      - name: Configure Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Install dependencies
+      - name: Install project dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Install required Expo native modules
-        run: npx expo install expo-asset expo-constants
+      - name: Install Expo SDK 53 native modules at project root
+        run: npx expo install expo-asset expo-constants expo-file-system expo-font expo-keep-awake
 
-      - name: Align Expo dependencies
+      - name: Align dependencies with Expo SDK
         run: npx expo install --fix
 
-      - name: Check Expo configuration
+      - name: Validate Expo setup
         run: npx expo-doctor
 
-      - name: Verify required native modules are installed
-        run: node -e "for (const name of ['expo-asset','expo-constants']) { console.log(name + ': ' + require.resolve(name + '/package.json')); }"
+      - name: Verify native module packages
+        run: node -e "for (const n of ['expo-asset','expo-constants','expo-file-system','expo-font','expo-keep-awake']) { console.log(n + ' => ' + require.resolve(n + '/package.json')); }"
 
-      - name: Generate Android project
-        run: npx expo prebuild --platform android --non-interactive --clean
+      - name: Generate clean Android native project
+        run: npx expo prebuild --platform android --clean --non-interactive
 
-      - name: Build release APK
+      - name: Assemble release APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK
+      - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
           name: Chess-Coach-AI-APK
