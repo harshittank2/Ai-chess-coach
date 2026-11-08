@@ -33,14 +33,20 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Install required Expo native modules
+        run: npx expo install expo-asset expo-constants
+
       - name: Align Expo dependencies
         run: npx expo install --fix
 
       - name: Check Expo configuration
         run: npx expo-doctor
 
+      - name: Verify required native modules are installed
+        run: node -e "for (const name of ['expo-asset','expo-constants']) { console.log(name + ': ' + require.resolve(name + '/package.json')); }"
+
       - name: Generate Android project
-        run: npx expo prebuild --platform android --non-interactive
+        run: npx expo prebuild --platform android --non-interactive --clean
 
       - name: Build release APK
         run: |
