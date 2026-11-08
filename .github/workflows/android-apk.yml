@@ -19,6 +19,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -31,6 +32,9 @@ jobs:
 
       - name: Fix Expo dependencies
         run: npx expo install --fix
+
+      - name: Install Expo Font
+        run: npx expo install expo-font
 
       - name: Check Expo configuration
         run: npx expo-doctor
