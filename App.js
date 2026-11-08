@@ -134,7 +134,7 @@ let localEngineInit = null;
 let localEngineQueue = Promise.resolve();
 
 async function analyzeLocalFen(fen, depth) {
-  localEngineQueue = localEngineQueue.then(async () => {
+  localEngineQueue = localEngineQueue.catch(() => {}).then(async () => {
     if (!localEngineInit) localEngineInit = Stockfish.init();
     const ready = await localEngineInit;
     if (ready === false) throw new Error('Local Stockfish could not start');
@@ -530,7 +530,13 @@ export default function App() {
         move = await getStockfishMove(game.fen(), level, engineMode);
         if (!cancelled) setEngineLabel(engineMode === 'Online only' ? 'Online Stockfish' : engineMode === 'Local only' ? 'Local Stockfish' : 'Local-first Stockfish');
       } catch (error) {
-        if (engineMode === 'Local only') { move = chooseLocalMove(game.fen(), level); if (!cancelled) setEngineLabel('Local Stockfish unavailable · basic AI fallback'); } else { move = chooseLocalMove(game.fen(), level); if (!cancelled) setEngineLabel('Engine unavailable · basic AI fallback'); }
+        if (engineMode === 'Local only') {
+          move = null;
+          if (!cancelled) { setEngineLabel('Local Stockfish unavailable'); setMessage('Local Stockfish could not start. Switch to Auto or Online only, or retry the engine.'); }
+        } else {
+          move = chooseLocalMove(game.fen(), level);
+          if (!cancelled) setEngineLabel('Engine unavailable · basic AI fallback');
+        }
       }
       if (!cancelled && move) {
         const next = new Chess(game.fen());
