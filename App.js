@@ -100,7 +100,7 @@ async function getStockfishMove(fen, level) {
   if (!response.ok) throw new Error('Stockfish service unavailable');
   const data = await response.json();
   const raw = String(data.bestmove || data.bestMove || '');
-  const match = raw.match(/bestmove\\s+([a-h][1-8][a-h][1-8][qrbn]?)/i) || raw.match(/^([a-h][1-8][a-h][1-8][qrbn]?)/i);
+  const match = raw.match(/bestmove\s+([a-h][1-8][a-h][1-8][qrbn]?)/i) || raw.match(/^([a-h][1-8][a-h][1-8][qrbn]?)/i);
   if (!match) throw new Error('No legal engine move returned');
   const uci = match[1];
   return {
