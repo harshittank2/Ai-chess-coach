@@ -43,7 +43,7 @@ jobs:
         run: npx expo-doctor
 
       - name: Verify native module packages
-        run: node -e "for (const n of ['expo-asset','expo-constants','expo-file-system','expo-font','expo-keep-awake','@react-native-async-storage/async-storage']) { console.log(n + ' => ' + require.resolve(n + '/package.json')); }"
+        run: node -e "for (const n of ['expo-asset','expo-constants','expo-file-system','expo-font','expo-keep-awake','@react-native-async-storage/async-storage','dawikk-stockfish']) { console.log(n + ' => ' + require.resolve(n + '/package.json')); }"
 
       - name: Generate clean Android native project
         run: npx expo prebuild --platform android --clean --non-interactive

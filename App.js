@@ -7,6 +7,7 @@ import { Chess } from 'chess.js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import Stockfish from 'dawikk-stockfish';
 
 const COLORS = {
   bg: '#080d18', panel: '#111a2b', panel2: '#172338', line: '#26364d',
@@ -129,28 +130,81 @@ function chooseLocalMove(fen, level) {
   return bestMove;
 }
 
-async function getStockfishMove(fen, level) {
-  const depth = level === 'Hard' ? 14 : level === 'Medium' ? 9 : 5;
+let localEngineInit = null;
+let localEngineQueue = Promise.resolve();
+
+async function analyzeLocalFen(fen, depth) {
+  localEngineQueue = localEngineQueue.then(async () => {
+    if (!localEngineInit) localEngineInit = Stockfish.init();
+    const ready = await localEngineInit;
+    if (ready === false) throw new Error('Local Stockfish could not start');
+    return new Promise(async (resolve, reject) => {
+      let latest = { evaluation: 0, mate: null, continuation: '', depth };
+      let settled = false;
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        unsubscribe();
+        if (error) reject(error); else resolve(value);
+      };
+      const timer = setTimeout(() => finish(new Error('Local Stockfish timed out')), 35000);
+      const unsubscribe = Stockfish.addMessageListener(message => {
+        const line = String(message && (message.line || message.message || message));
+        const d = line.match(/\bdepth\s+(\d+)/i);
+        const cp = line.match(/\bscore\s+cp\s+(-?\d+)/i);
+        const mate = line.match(/\bscore\s+mate\s+(-?\d+)/i);
+        const pv = line.match(/\bpv\s+(.+)$/i);
+        if (d) latest.depth = Number(d[1]);
+        if (cp) latest.evaluation = Number(cp[1]) / 100;
+        if (mate) latest.mate = Number(mate[1]);
+        if (pv) latest.continuation = pv[1].trim();
+        const best = line.match(/\bbestmove\s+([a-h][1-8][a-h][1-8][qrbn]?)/i);
+        if (best) {
+          const sideToMove = fen.split(' ')[1] || 'w';
+          const whiteEval = sideToMove === 'w' ? latest.evaluation : -latest.evaluation;
+          finish(null, { ...latest, evaluation: whiteEval, bestmove: best[1], engine: 'Local Stockfish' });
+        }
+      });
+      try {
+        await Stockfish.sendCommand('stop');
+        await Stockfish.sendCommand('position fen ' + fen);
+        await Stockfish.sendCommand('go depth ' + depth);
+      } catch (error) { finish(error); }
+    });
+  });
+  return localEngineQueue;
+}
+
+async function analyzeOnlineFen(fen, depth) {
   const url = 'https://stockfish.online/api/s/v2.php?fen=' + encodeURIComponent(fen) + '&depth=' + depth;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-  let response;
-  try {
-    response = await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-  if (!response.ok) throw new Error('Stockfish service unavailable');
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Online Stockfish service unavailable');
   const data = await response.json();
+  if (data.success === false) throw new Error(data.error || 'Online Stockfish analysis failed');
   const raw = String(data.bestmove || data.bestMove || '');
   const match = raw.match(/bestmove\s+([a-h][1-8][a-h][1-8][qrbn]?)/i) || raw.match(/^([a-h][1-8][a-h][1-8][qrbn]?)/i);
+  return { evaluation: Number(data.evaluation || 0), mate: data.mate, bestmove: match ? match[1] : raw, continuation: data.continuation || '', depth: data.depth || depth, engine: 'Online Stockfish' };
+}
+
+async function analyzeFen(fen, depth, mode) {
+  if (mode === 'Online only') return analyzeOnlineFen(fen, depth);
+  try {
+    return await analyzeLocalFen(fen, depth);
+  } catch (error) {
+    if (mode === 'Local only') throw error;
+    return analyzeOnlineFen(fen, depth);
+  }
+}
+
+async function getStockfishMove(fen, level, mode) {
+  const depth = level === 'Hard' ? 14 : level === 'Medium' ? 10 : 6;
+  const data = await analyzeFen(fen, depth, mode);
+  const raw = String(data.bestmove || '');
+  const match = raw.match(/([a-h][1-8][a-h][1-8][qrbn]?)/i);
   if (!match) throw new Error('No legal engine move returned');
   const uci = match[1];
-  return {
-    from: uci.slice(0, 2),
-    to: uci.slice(2, 4),
-    promotion: uci[4] || 'q'
-  };
+  return { from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' };
 }
 
 export default function App() {
@@ -162,6 +216,7 @@ export default function App() {
   const [lessonIndex, setLessonIndex] = useState(0);
   const [tab, setTab] = useState('Learn');
   const [level, setLevel] = useState('Medium');
+  const [engineMode, setEngineMode] = useState('Auto');
   const [message, setMessage] = useState('Choose a piece, then tap a highlighted square.');
   const [aiThinking, setAiThinking] = useState(false);
   const [engineLabel, setEngineLabel] = useState('Ready to play');
@@ -306,7 +361,8 @@ export default function App() {
           color,
           san: applied.san,
           uci: applied.from + applied.to + (applied.promotion || ''),
-          fen: beforeFen
+          fen: beforeFen,
+          afterFen: replay.fen()
         };
       });
       setImportedGame({ headers, plies, finalFen: replay.fen(), result: headers.Result || '*', finalStatus: replay.isGameOver() ? (replay.isCheckmate() ? 'Checkmate' : 'Draw') : 'Game imported' });
@@ -326,36 +382,31 @@ export default function App() {
 
   async function analyzeImportedGame() {
     if (!importedGame || pgnAnalyzing) return;
-    const maxPlies = Math.min(importedGame.plies.length, 80);
+    const maxPlies = Math.min(importedGame.plies.length, 60);
     setPgnAnalyzing(true);
     setPgnAnalysis([]);
     setPgnProgress(0);
     setPgnError('');
     const results = [];
     try {
+      let currentEval = null;
       for (let i = 0; i < maxPlies; i += 1) {
         const ply = importedGame.plies[i];
-        const url = 'https://stockfish.online/api/s/v2.php?fen=' + encodeURIComponent(ply.fen) + '&depth=12';
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Stockfish service failed on move ' + ply.fullMove + '.');
-        const data = await response.json();
-        if (data.success === false) throw new Error(data.error || 'Stockfish analysis failed.');
-        const rawBest = String(data.bestmove || data.bestMove || '');
-        const match = rawBest.match(/bestmove\s+([a-h][1-8][a-h][1-8][qrbn]?)/i) || rawBest.match(/^([a-h][1-8][a-h][1-8][qrbn]?)/i);
-        results.push({
-          ...ply,
-          evaluation: data.evaluation,
-          mate: data.mate,
-          bestmove: match ? match[1] : rawBest,
-          continuation: data.continuation || '',
-          depth: data.depth || 12,
-          bestMovePlayed: !!(match && match[1].toLowerCase() === ply.uci.toLowerCase())
-        });
+        const before = currentEval || await analyzeFen(ply.fen, 10, engineMode);
+        const after = await analyzeFen(ply.afterFen, 10, engineMode);
+        currentEval = after;
+        const best = String(before.bestmove || '').match(/[a-h][1-8][a-h][1-8][qrbn]?/i);
+        const beforeWhite = Number(before.evaluation || 0);
+        const afterWhite = Number(after.evaluation || 0);
+        const loss = ply.color === 'w' ? beforeWhite - afterWhite : afterWhite - beforeWhite;
+        const lossCp = Math.max(0, loss * 100);
+        const classification = lossCp <= 15 ? 'Best' : lossCp <= 35 ? 'Excellent' : lossCp <= 70 ? 'Good' : lossCp <= 130 ? 'Inaccuracy' : lossCp <= 250 ? 'Mistake' : 'Blunder';
+        results.push({ ...ply, evaluation: before.evaluation, mate: before.mate, bestmove: best ? best[0] : before.bestmove, continuation: before.continuation || '', depth: before.depth || 10, bestMovePlayed: !!(best && best[0].toLowerCase() === ply.uci.toLowerCase()), evalLoss: lossCp, classification, engine: before.engine });
         setPgnAnalysis([...results]);
         setPgnProgress(i + 1);
       }
-      if (importedGame.plies.length > maxPlies) setPgnError('Analysed the first 80 half-moves to keep the review reliable. The imported game contains ' + importedGame.plies.length + '.');
-      setMessage('Stockfish review complete for ' + results.length + ' moves. Tap a move report to inspect its best line.');
+      if (importedGame.plies.length > maxPlies) setPgnError('Analysed the first 60 half-moves to keep review time reasonable. The imported game contains ' + importedGame.plies.length + '.');
+      setMessage('Stockfish review complete for ' + results.length + ' moves. Move classifications use the change in engine evaluation after each played move.');
     } catch (error) {
       setPgnError((error.message || 'Stockfish review failed.') + ' Check your internet connection and try again.');
     } finally {
@@ -367,16 +418,12 @@ export default function App() {
     setAnalyzing(true);
     setAnalysis(null);
     try {
-      const url = 'https://stockfish.online/api/s/v2.php?fen=' + encodeURIComponent(game.fen()) + '&depth=15';
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Stockfish service unavailable');
-      const data = await response.json();
-      if (data.success === false) throw new Error(data.error || 'Analysis failed');
-      setAnalysis({ evaluation: data.evaluation, mate: data.mate, bestmove: data.bestmove, continuation: data.continuation, depth: data.depth || 15 });
+      const data = await analyzeFen(game.fen(), 15, engineMode);
+      setAnalysis({ evaluation: data.evaluation, mate: data.mate, bestmove: data.bestmove, continuation: data.continuation, depth: data.depth || 15, engine: data.engine });
       setMessage('Stockfish analysed this position. Check the engine result below.');
       setEngineLabel('Stockfish analysis · depth 15');
     } catch (error) {
-      setMessage('Stockfish analysis needs an internet connection. Please try again.');
+      setMessage(error.message || 'Stockfish analysis failed.');
     } finally {
       setAnalyzing(false);
     }
@@ -480,11 +527,10 @@ export default function App() {
     (async () => {
       let move = null;
       try {
-        move = await getStockfishMove(game.fen(), level);
-        if (!cancelled) setEngineLabel('Stockfish online');
+        move = await getStockfishMove(game.fen(), level, engineMode);
+        if (!cancelled) setEngineLabel(engineMode === 'Online only' ? 'Online Stockfish' : engineMode === 'Local only' ? 'Local Stockfish' : 'Local-first Stockfish');
       } catch (error) {
-        move = chooseLocalMove(game.fen(), level);
-        if (!cancelled) setEngineLabel('Built-in AI · offline fallback');
+        if (engineMode === 'Local only') { move = chooseLocalMove(game.fen(), level); if (!cancelled) setEngineLabel('Local Stockfish unavailable · basic AI fallback'); } else { move = chooseLocalMove(game.fen(), level); if (!cancelled) setEngineLabel('Engine unavailable · basic AI fallback'); }
       }
       if (!cancelled && move) {
         const next = new Chess(game.fen());
@@ -506,7 +552,7 @@ export default function App() {
       cancelled = true;
       aiBusy.current = false;
     };
-  }, [tab, game, level]);
+  }, [tab, game, level, engineMode]);
 
   const movePairs = useMemo(() => {
     const pairs = [];
@@ -620,6 +666,32 @@ export default function App() {
 
           {tab === 'Review' && (
             <View style={{ width: '100%', gap: 10, marginTop: 12 }}>
+              <View style={styles.reviewTopBar}>
+                <View style={styles.reviewCoachAvatar}><Text style={styles.reviewCoachAvatarText}>♟</Text></View>
+                <View style={styles.reviewCoachBubble}><Text style={styles.reviewCoachText}>{pgnAnalysis.length ? 'Your game has been analysed. Check the move classifications and engine lines below.' : 'Import your Chess.com PGN and let Stockfish review the critical moments in your game.'}</Text></View>
+              </View>
+              <View style={styles.engineModeCard}>
+                <Text style={styles.sectionTitle}>Analysis engine</Text>
+                <View style={styles.engineModeRow}>
+                  {['Auto', 'Local only', 'Online only'].map(mode => (
+                    <Pressable key={mode} onPress={() => setEngineMode(mode)} style={[styles.engineModeButton, engineMode === mode && styles.engineModeButtonActive]}>
+                      <Text style={[styles.engineModeText, engineMode === mode && styles.engineModeTextActive]}>{mode}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.helper}>{engineMode === 'Auto' ? 'Local Stockfish first; online Stockfish is the fallback.' : engineMode === 'Local only' ? 'Runs Stockfish on this phone. Internet is not required.' : 'Uses the online Stockfish service and requires internet.'}</Text>
+              </View>
+              {!!pgnAnalysis.length && <View style={styles.reviewSummaryCard}>
+                <Text style={styles.reviewSummaryTitle}>GAME REVIEW</Text>
+                <View style={styles.reviewGraph}><View style={[styles.reviewGraphLine, { width: Math.max(6, Math.min(94, 50 + Number(pgnAnalysis[pgnAnalysis.length - 1].evaluation || 0) * 8)) + '%' }]} /></View>
+                <View style={styles.reviewPlayers}><Text style={styles.reviewPlayerName}>{importedGame?.headers?.White || 'White'}</Text><Text style={styles.reviewPlayerName}>{importedGame?.headers?.Black || 'Black'}</Text></View>
+                <View style={styles.reviewStatsRow}>
+                  <View style={styles.reviewStat}><Text style={styles.reviewStatValue}>{Math.round(100 * pgnAnalysis.filter(x => x.bestMovePlayed).length / pgnAnalysis.length)}%</Text><Text style={styles.reviewStatLabel}>Top-move rate</Text></View>
+                  <View style={styles.reviewStat}><Text style={[styles.reviewStatValue, { color: '#8cc85b' }]}>{pgnAnalysis.filter(x => x.bestMovePlayed).length}</Text><Text style={styles.reviewStatLabel}>Best moves</Text></View>
+                  <View style={styles.reviewStat}><Text style={[styles.reviewStatValue, { color: '#f0a35a' }]}>{pgnAnalysis.filter(x => !x.bestMovePlayed).length}</Text><Text style={styles.reviewStatLabel}>Needs review</Text></View>
+                </View>
+                <Text style={styles.helper}>Top-move rate is the share of played moves matching Stockfish's first choice; it is not the same as Chess.com accuracy.</Text>
+              </View>}
               <View style={styles.pgnCard}>
                 <Text style={styles.sectionTitle}>Import a Chess.com game</Text>
                 <Text style={styles.helper}>Export your game from Chess.com as PGN, then select the .pgn file or paste its contents here.</Text>
@@ -647,14 +719,14 @@ export default function App() {
                     <Pressable onPress={analyzeImportedGame} disabled={pgnAnalyzing} style={styles.primaryButton}>
                       {pgnAnalyzing ? <ActivityIndicator color="#10180d" /> : <Text style={styles.primaryText}>Analyse full game with Stockfish</Text>}
                     </Pressable>
-                    {pgnAnalyzing && <Text style={styles.helper}>Analysing {pgnProgress}/{Math.min(importedGame.plies.length, 80)} positions… Keep this screen open.</Text>}
+                    {pgnAnalyzing && <Text style={styles.helper}>Analysing {pgnProgress}/{Math.min(importedGame.plies.length, 60)} moves with Stockfish… Keep this screen open.</Text>}
                     {!!pgnAnalysis.length && <Text style={styles.importedTitle}>Engine review · {pgnAnalysis.length} moves analysed</Text>}
                     {pgnAnalysis.map(item => (
                       <View key={item.index} style={styles.pgnMoveRow}>
-                        <Text style={styles.pgnMoveLabel}>{item.fullMove}{item.color === 'w' ? '.' : '…'} {item.san}</Text>
+                        <View style={styles.pgnMoveLabelBlock}><Text style={styles.pgnMoveLabel}>{item.fullMove}{item.color === 'w' ? '.' : '…'} {item.san}</Text><Text style={[styles.moveClassTag, item.classification === 'Best' || item.classification === 'Excellent' ? styles.moveClassGood : item.classification === 'Blunder' || item.classification === 'Mistake' ? styles.moveClassBad : styles.moveClassOkay]}>{item.classification || (item.bestMovePlayed ? 'Top move' : 'Review')}</Text></View>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.pgnMoveEval}>{item.mate !== null && item.mate !== undefined ? 'Mate ' + item.mate : 'Eval ' + (Number(item.evaluation) > 0 ? '+' : '') + Number(item.evaluation || 0).toFixed(2)}</Text>
-                          <Text style={styles.helper}>Best: {item.bestmove || 'Unavailable'} {item.bestMovePlayed ? '· Played engine top move' : ''}</Text>
+                          <Text style={styles.helper}>Best: {item.bestmove || 'Unavailable'} · loss {Math.round(item.evalLoss || 0)} cp · {item.engine || 'Stockfish'}</Text>
                           {!!item.continuation && <Text style={styles.pgnLine}>Line: {item.continuation}</Text>}
                         </View>
                       </View>
@@ -693,7 +765,7 @@ export default function App() {
               </Pressable>
               {analysis && (
                 <View style={styles.analysisCard}>
-                  <Text style={styles.coachTitle}>STOCKFISH · DEPTH {analysis.depth}</Text>
+                  <Text style={styles.coachTitle}>{analysis.engine || 'STOCKFISH'} · DEPTH {analysis.depth}</Text>
                   <Text style={styles.coachBody}>Evaluation: {analysis.mate !== null && analysis.mate !== undefined ? 'Mate in ' + analysis.mate : (Number(analysis.evaluation) > 0 ? '+' : '') + Number(analysis.evaluation || 0).toFixed(2)} · Best move: {analysis.bestmove || 'Not available'}</Text>
                   {!!analysis.continuation && <Text style={styles.helper}>Best line: {analysis.continuation}</Text>}
                 </View>
@@ -783,9 +855,9 @@ export default function App() {
             <View style={styles.featureItem}><Text style={styles.featureIcon}>⚡</Text><Text style={styles.featureName}>AI opponent</Text></View>
             <View style={styles.featureItem}><Text style={styles.featureIcon}>♜</Text><Text style={styles.featureName}>Move review</Text></View>
           </View>
-          <Text style={styles.licenseNote}>Stockfish is GPLv3 software. This app connects to a public Stockfish analysis service; the built-in AI is used as a fallback.</Text>
+          <Text style={styles.licenseNote}>Stockfish is GPLv3 software. Local engine supplied by dawikk-stockfish; online analysis is an optional fallback. Source and licence details are documented in the repository README.</Text>
         </View>
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.5.0</Text>
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.6.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -880,6 +952,32 @@ const styles = StyleSheet.create({
   licenseNote: { color: '#78869e', fontSize: 9, lineHeight: 14 },
   footer: { width: '100%', textAlign: 'center', fontSize: 9, letterSpacing: 2, color: '#59667c', marginTop: 2 },
   movingPiece: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  reviewTopBar: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 8 },
+  reviewCoachAvatar: { width: 62, height: 70, borderRadius: 14, backgroundColor: '#55433a', alignItems: 'center', justifyContent: 'center' },
+  reviewCoachAvatarText: { fontSize: 42, color: '#f4d7b0' },
+  reviewCoachBubble: { flex: 1, backgroundColor: '#f7f5f0', padding: 14, borderRadius: 16, borderBottomLeftRadius: 4 },
+  reviewCoachText: { color: '#282625', fontSize: 13, fontWeight: '700', lineHeight: 19 },
+  engineModeCard: { width: '100%', backgroundColor: '#292727', borderRadius: 14, padding: 12, gap: 8 },
+  engineModeRow: { flexDirection: 'row', gap: 6 },
+  engineModeButton: { flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: 'center', backgroundColor: '#403d3d', borderWidth: 1, borderColor: '#504b4b' },
+  engineModeButtonActive: { backgroundColor: '#6f9f43', borderColor: '#94c963' },
+  engineModeText: { color: '#d0cecb', fontSize: 10, fontWeight: '800' },
+  engineModeTextActive: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  reviewSummaryCard: { width: '100%', backgroundColor: '#393636', borderRadius: 12, padding: 12, gap: 10 },
+  reviewSummaryTitle: { color: '#f7f5f0', fontSize: 14, fontWeight: '900' },
+  reviewGraph: { height: 54, backgroundColor: '#4a4646', borderRadius: 7, justifyContent: 'center', overflow: 'hidden' },
+  reviewGraphLine: { height: 3, backgroundColor: '#8fbe57', borderRadius: 2 },
+  reviewPlayers: { flexDirection: 'row', justifyContent: 'space-between' },
+  reviewPlayerName: { color: '#f7f5f0', fontWeight: '900', fontSize: 12 },
+  reviewStatsRow: { flexDirection: 'row', gap: 8 },
+  reviewStat: { flex: 1, alignItems: 'center', backgroundColor: '#4a4646', borderRadius: 8, paddingVertical: 10 },
+  reviewStatValue: { color: '#f7f5f0', fontSize: 22, fontWeight: '900' },
+  reviewStatLabel: { color: '#d3ceca', fontSize: 9, fontWeight: '700', marginTop: 3 },
+  pgnMoveLabelBlock: { width: 72, gap: 4 },
+  moveClassTag: { alignSelf: 'flex-start', fontSize: 8, fontWeight: '900', paddingHorizontal: 5, paddingVertical: 3, borderRadius: 5, overflow: 'hidden' },
+  moveClassGood: { color: '#d7f3b5', backgroundColor: '#31513a' },
+  moveClassOkay: { color: '#f7d98c', backgroundColor: '#554628' },
+  moveClassBad: { color: '#ffb1a8', backgroundColor: '#5a302e' },
   ratingHero: { width: '100%', flexDirection: 'row', alignItems: 'center', backgroundColor: '#172a22', borderRadius: 16, borderWidth: 1, borderColor: '#355640', padding: 16, gap: 14 },
   ratingEyebrow: { color: '#a9c7ad', fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
   ratingNumber: { color: '#f4f7fb', fontSize: 38, fontWeight: '900', letterSpacing: -1.5, marginTop: 4 },

@@ -1,6 +1,6 @@
 {
   "name": "chess-coach-ai",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
@@ -22,7 +22,8 @@
     "react": "19.0.0",
     "react-native": "0.79.5",
     "@react-native-async-storage/async-storage": "2.1.2",
-    "expo-document-picker": "~13.1.5"
+    "expo-document-picker": "~13.1.5",
+    "dawikk-stockfish": "^0.9.87"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

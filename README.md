@@ -33,3 +33,13 @@ The workflow installs dependencies with npm (the repository intentionally does n
 The app requests moves from the public Stockfish service at stockfish.online. It does not require an API key or paid subscription. If the service is unavailable, a built-in minimax chess AI plays instead. Engine availability depends on an internet connection and the third-party service.
 
 Stockfish is GPLv3-licensed software. This app calls a public analysis service and does not bundle the Stockfish binary. See https://github.com/official-stockfish/Stockfish for licensing and source information.
+
+
+## Stockfish engines (v0.6.0)
+
+- **Auto** uses the bundled native Stockfish engine first and falls back to the online Stockfish analysis endpoint if local engine startup fails.
+- **Local only** runs the bundled Stockfish engine on the device without internet access.
+- **Online only** uses the online analysis service.
+- Chess.com PGN review reports evaluation loss after each played move and labels moves Best, Excellent, Good, Inaccuracy, Mistake, or Blunder. This is an engine-depth-based approximation, not Chess.com's proprietary accuracy formula.
+- Native engine dependency: `dawikk-stockfish` (Stockfish 17). Stockfish is licensed under GPL-3.0. See https://github.com/official-stockfish/Stockfish for the upstream source and license. The app bundles the native engine through the dependency; corresponding source and license obligations must be met when distributing builds.
+- Local analysis uses CPU and battery; higher depth and long PGNs take longer.
