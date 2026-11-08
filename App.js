@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  SafeAreaView, View, Text, Pressable, ScrollView, StyleSheet,
+  SafeAreaView, View, Text, TextInput, Pressable, ScrollView, StyleSheet,
   StatusBar, ActivityIndicator, useWindowDimensions, Animated
 } from 'react-native';
 import { Chess } from 'chess.js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const COLORS = {
   bg: '#080d18', panel: '#111a2b', panel2: '#172338', line: '#26364d',
@@ -171,6 +173,12 @@ export default function App() {
   const [ratingReady, setRatingReady] = useState(false);
   const ratedGameKey = useRef('');
   const [analyzing, setAnalyzing] = useState(false);
+  const [pgnText, setPgnText] = useState('');
+  const [pgnError, setPgnError] = useState('');
+  const [importedGame, setImportedGame] = useState(null);
+  const [pgnAnalysis, setPgnAnalysis] = useState([]);
+  const [pgnAnalyzing, setPgnAnalyzing] = useState(false);
+  const [pgnProgress, setPgnProgress] = useState(0);
   const animationPosition = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const aiBusy = useRef(false);
   const currentLesson = LESSONS[lessonIndex] || null;
@@ -253,6 +261,106 @@ export default function App() {
       if (note) setMessage(note);
       if (onFinish) onFinish();
     });
+  }
+
+  async function choosePgnFile() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['*/*'],
+        copyToCacheDirectory: true,
+        multiple: false
+      });
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      const asset = result.assets[0];
+      if (asset.name && !asset.name.toLowerCase().endsWith('.pgn') && !asset.name.toLowerCase().endsWith('.txt')) {
+        setPgnError('Choose a .pgn file (or a .txt file containing PGN).');
+        return;
+      }
+      const contents = await FileSystem.readAsStringAsync(asset.uri);
+      setPgnText(contents);
+      setPgnError('');
+      setMessage('PGN file loaded. Tap Import game to prepare the review.');
+    } catch (error) {
+      setPgnError('Could not read that file. You can also paste the PGN text below.');
+    }
+  }
+
+  function importPgnGame() {
+    try {
+      if (!pgnText.trim()) throw new Error('Choose a PGN file or paste PGN text first.');
+      const parsed = new Chess();
+      parsed.loadPgn(pgnText.trim());
+      const headers = parsed.header();
+      const verbose = parsed.history({ verbose: true });
+      if (!verbose.length) throw new Error('This PGN contains no moves.');
+      const initialFen = headers.FEN || new Chess().fen();
+      const replay = new Chess(initialFen);
+      const plies = verbose.map((move, index) => {
+        const beforeFen = replay.fen();
+        const color = replay.turn();
+        const applied = replay.move(move.san);
+        if (!applied) throw new Error('Could not replay move ' + (index + 1) + '.');
+        return {
+          index: index + 1,
+          fullMove: Math.floor(index / 2) + 1,
+          color,
+          san: applied.san,
+          uci: applied.from + applied.to + (applied.promotion || ''),
+          fen: beforeFen
+        };
+      });
+      setImportedGame({ headers, plies, finalFen: replay.fen(), result: headers.Result || '*', finalStatus: replay.isGameOver() ? (replay.isCheckmate() ? 'Checkmate' : 'Draw') : 'Game imported' });
+      setPgnAnalysis([]);
+      setPgnProgress(0);
+      setPgnError('');
+      setGame(replay);
+      setHistory(replay.history());
+      setSelected(null);
+      setTargets([]);
+      setMessage('Imported ' + plies.length + ' half-moves. Run Stockfish review to analyse every played move.');
+    } catch (error) {
+      setImportedGame(null);
+      setPgnError(error.message || 'Invalid PGN. Check the file and try again.');
+    }
+  }
+
+  async function analyzeImportedGame() {
+    if (!importedGame || pgnAnalyzing) return;
+    const maxPlies = Math.min(importedGame.plies.length, 80);
+    setPgnAnalyzing(true);
+    setPgnAnalysis([]);
+    setPgnProgress(0);
+    setPgnError('');
+    const results = [];
+    try {
+      for (let i = 0; i < maxPlies; i += 1) {
+        const ply = importedGame.plies[i];
+        const url = 'https://stockfish.online/api/s/v2.php?fen=' + encodeURIComponent(ply.fen) + '&depth=12';
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Stockfish service failed on move ' + ply.fullMove + '.');
+        const data = await response.json();
+        if (data.success === false) throw new Error(data.error || 'Stockfish analysis failed.');
+        const rawBest = String(data.bestmove || data.bestMove || '');
+        const match = rawBest.match(/bestmove\s+([a-h][1-8][a-h][1-8][qrbn]?)/i) || rawBest.match(/^([a-h][1-8][a-h][1-8][qrbn]?)/i);
+        results.push({
+          ...ply,
+          evaluation: data.evaluation,
+          mate: data.mate,
+          bestmove: match ? match[1] : rawBest,
+          continuation: data.continuation || '',
+          depth: data.depth || 12,
+          bestMovePlayed: !!(match && match[1].toLowerCase() === ply.uci.toLowerCase())
+        });
+        setPgnAnalysis([...results]);
+        setPgnProgress(i + 1);
+      }
+      if (importedGame.plies.length > maxPlies) setPgnError('Analysed the first 80 half-moves to keep the review reliable. The imported game contains ' + importedGame.plies.length + '.');
+      setMessage('Stockfish review complete for ' + results.length + ' moves. Tap a move report to inspect its best line.');
+    } catch (error) {
+      setPgnError((error.message || 'Stockfish review failed.') + ' Check your internet connection and try again.');
+    } finally {
+      setPgnAnalyzing(false);
+    }
   }
 
   async function analyzeCurrentPosition() {
@@ -512,6 +620,48 @@ export default function App() {
 
           {tab === 'Review' && (
             <View style={{ width: '100%', gap: 10, marginTop: 12 }}>
+              <View style={styles.pgnCard}>
+                <Text style={styles.sectionTitle}>Import a Chess.com game</Text>
+                <Text style={styles.helper}>Export your game from Chess.com as PGN, then select the .pgn file or paste its contents here.</Text>
+                <Pressable onPress={choosePgnFile} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryText}>Choose PGN file</Text>
+                </Pressable>
+                <TextInput
+                  value={pgnText}
+                  onChangeText={setPgnText}
+                  placeholder={'Paste PGN here…\n[Event "Live Chess"]\n1. e4 e5 2. Nf3 Nc6'}
+                  placeholderTextColor="#73819a"
+                  multiline
+                  autoCapitalize="none"
+                  style={styles.pgnInput}
+                  textAlignVertical="top"
+                />
+                <Pressable onPress={importPgnGame} style={styles.primaryButton}>
+                  <Text style={styles.primaryText}>Import game</Text>
+                </Pressable>
+                {!!pgnError && <Text style={styles.pgnError}>{pgnError}</Text>}
+                {importedGame && (
+                  <View style={styles.importedSummary}>
+                    <Text style={styles.importedTitle}>{importedGame.headers.White || 'White'} vs {importedGame.headers.Black || 'Black'}</Text>
+                    <Text style={styles.helper}>{importedGame.headers.Event || 'Imported PGN'} · {importedGame.plies.length} half-moves · Result {importedGame.result}</Text>
+                    <Pressable onPress={analyzeImportedGame} disabled={pgnAnalyzing} style={styles.primaryButton}>
+                      {pgnAnalyzing ? <ActivityIndicator color="#10180d" /> : <Text style={styles.primaryText}>Analyse full game with Stockfish</Text>}
+                    </Pressable>
+                    {pgnAnalyzing && <Text style={styles.helper}>Analysing {pgnProgress}/{Math.min(importedGame.plies.length, 80)} positions… Keep this screen open.</Text>}
+                    {!!pgnAnalysis.length && <Text style={styles.importedTitle}>Engine review · {pgnAnalysis.length} moves analysed</Text>}
+                    {pgnAnalysis.map(item => (
+                      <View key={item.index} style={styles.pgnMoveRow}>
+                        <Text style={styles.pgnMoveLabel}>{item.fullMove}{item.color === 'w' ? '.' : '…'} {item.san}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.pgnMoveEval}>{item.mate !== null && item.mate !== undefined ? 'Mate ' + item.mate : 'Eval ' + (Number(item.evaluation) > 0 ? '+' : '') + Number(item.evaluation || 0).toFixed(2)}</Text>
+                          <Text style={styles.helper}>Best: {item.bestmove || 'Unavailable'} {item.bestMovePlayed ? '· Played engine top move' : ''}</Text>
+                          {!!item.continuation && <Text style={styles.pgnLine}>Line: {item.continuation}</Text>}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
               <View style={styles.ratingHero}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.ratingEyebrow}>YOUR RAPID RATING</Text>
@@ -635,7 +785,7 @@ export default function App() {
           </View>
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. This app connects to a public Stockfish analysis service; the built-in AI is used as a fallback.</Text>
         </View>
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.3.0</Text>
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.5.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -746,4 +896,13 @@ const styles = StyleSheet.create({
   ratingChange: { fontSize: 16, fontWeight: '900' },
   ratingFootnote: { color: '#7f8da3', fontSize: 9, lineHeight: 14 },
   analysisCard: { width: '100%', backgroundColor: COLORS.panel2, borderRadius: 12, borderWidth: 1, borderColor: COLORS.line, padding: 12, gap: 6 },
+  pgnCard: { width: '100%', backgroundColor: COLORS.panel, borderWidth: 1, borderColor: COLORS.line, borderRadius: 14, padding: 14, gap: 10 },
+  pgnInput: { minHeight: 116, maxHeight: 190, color: COLORS.text, backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, borderRadius: 10, padding: 11, fontSize: 11 },
+  pgnError: { color: '#ff9999', fontSize: 11, lineHeight: 16 },
+  importedSummary: { gap: 9, borderTopWidth: 1, borderTopColor: COLORS.line, paddingTop: 10 },
+  importedTitle: { color: COLORS.text, fontSize: 13, fontWeight: '900' },
+  pgnMoveRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderTopWidth: 1, borderTopColor: '#26344a', paddingVertical: 8 },
+  pgnMoveLabel: { width: 58, color: COLORS.green, fontSize: 11, fontWeight: '900' },
+  pgnMoveEval: { color: COLORS.text, fontSize: 11, fontWeight: '800' },
+  pgnLine: { color: '#9ba9bf', fontSize: 10, lineHeight: 15, marginTop: 3 },
 });

@@ -1,0 +1,63 @@
+name: Build Chess Coach AI APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configure Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install project dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Expo SDK 53 native modules at project root
+        run: npx expo install expo-asset expo-constants expo-file-system expo-font expo-keep-awake @react-native-async-storage/async-storage expo-document-picker
+
+      - name: Align dependencies with Expo SDK
+        run: npx expo install --fix
+
+      - name: Validate Expo setup
+        run: npx expo-doctor
+
+      - name: Verify native module packages
+        run: node -e "for (const n of ['expo-asset','expo-constants','expo-file-system','expo-font','expo-keep-awake','@react-native-async-storage/async-storage','expo-document-picker']) { console.log(n + ' => ' + require.resolve(n + '/package.json')); }"
+
+      - name: Generate clean Android native project
+        run: npx expo prebuild --platform android --clean --non-interactive
+
+      - name: Assemble release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chess-Coach-AI-APK
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
