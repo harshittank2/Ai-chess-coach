@@ -43,3 +43,8 @@ Stockfish is GPLv3-licensed software. This app calls a public analysis service a
 - Chess.com PGN review reports evaluation loss after each played move and labels moves Best, Excellent, Good, Inaccuracy, Mistake, or Blunder. This is an engine-depth-based approximation, not Chess.com's proprietary accuracy formula.
 - Native engine dependency: `dawikk-stockfish` (Stockfish 17). Stockfish is licensed under GPL-3.0. See https://github.com/official-stockfish/Stockfish for the upstream source and license. The app bundles the native engine through the dependency; corresponding source and license obligations must be met when distributing builds.
 - Local analysis uses CPU and battery; higher depth and long PGNs take longer.
+
+
+## Game review update (v0.6.1)
+
+The local engine now follows the UCI startup handshake (`uci` / `uciok`, `isready` / `readyok`) before analysing positions. The PGN review includes a White-vs-Black move-quality table and separate good-or-better totals. Move categories are estimates based on evaluation loss at the selected engine depth; they are not Chess.com's proprietary accuracy calculation.
