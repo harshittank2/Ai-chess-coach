@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
   featureIcon: { color: COLORS.green, fontSize: 20 },
   featureName: { color: '#c6d0df', fontSize: 9, fontWeight: '800' },
   licenseNote: { color: '#78869e', fontSize: 9, lineHeight: 14 },
-  footer: { width: '100%', textAlign: 'center', fontSize: 9, letterSpacing: 2, color: '#59667c', marginTop: 2 }
+  footer: { width: '100%', textAlign: 'center', fontSize: 9, letterSpacing: 2, color: '#59667c', marginTop: 2 },
   movingPiece: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
   analysisCard: { width: '100%', backgroundColor: COLORS.panel2, borderRadius: 12, borderWidth: 1, borderColor: COLORS.line, padding: 12, gap: 6 },
 });
