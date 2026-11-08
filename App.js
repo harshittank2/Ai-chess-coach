@@ -1,138 +1,552 @@
-import React, { useMemo, useState } from 'react';
-import { SafeAreaView, View, Text, Pressable, ScrollView, StyleSheet, StatusBar } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  SafeAreaView, View, Text, Pressable, ScrollView, StyleSheet,
+  StatusBar, ActivityIndicator, useWindowDimensions
+} from 'react-native';
 import { Chess } from 'chess.js';
 
-const PIECES = {
-  wK:'♔', wQ:'♕', wR:'♖', wB:'♗', wN:'♘', wP:'♙',
-  bK:'♚', bQ:'♛', bR:'♜', bB:'♝', bN:'♞', bP:'♟'
+const COLORS = {
+  bg: '#080d18', panel: '#111a2b', panel2: '#172338', line: '#26364d',
+  text: '#f4f7fb', muted: '#91a0b8', green: '#a8ed78',
+  greenDark: '#1d3b2b', light: '#eee9dc', dark: '#77927d',
+  gold: '#f2c66d', red: '#ff7777'
 };
 const FILES = 'abcdefgh';
-const LESSON = [
-  { san:'e4', title:'Claim the centre', body:'Moving the king’s pawn two squares controls the central d5 and f5 squares and opens lines for your queen and bishop.' },
-  { san:'e5', title:'Contest the centre', body:'Black mirrors White and fights for central space. A good opening is about development and central control.' },
-  { san:'Nf3', title:'Develop with a threat', body:'The knight develops toward the centre and attacks Black’s e5 pawn. Develop your minor pieces before launching an early attack.' },
-  { san:'Nc6', title:'Defend and develop', body:'Black develops a knight while protecting the e5 pawn. Both sides are bringing pieces into the game.' },
-  { san:'Bc4', title:'Aim at f7', body:'The bishop targets f7, one of Black’s weakest opening squares. White can now consider castling soon.' }
+const PIECES = {
+  wK: '♔', wQ: '♕', wR: '♖', wB: '♗', wN: '♘', wP: '♙',
+  bK: '♚', bQ: '♛', bR: '♜', bB: '♝', bN: '♞', bP: '♟'
+};
+const LESSONS = [
+  { san: 'e4', title: 'Claim the centre', body: 'Your king pawn controls d5 and f5 while opening lines for your queen and bishop.' },
+  { san: 'e5', title: 'Contest the centre', body: 'Black fights for central space. Good openings are built on central control and development.' },
+  { san: 'Nf3', title: 'Develop with a threat', body: 'The knight moves toward the centre and attacks e5. Develop minor pieces before launching an attack.' },
+  { san: 'Nc6', title: 'Defend and develop', body: 'Black develops a knight and protects the e5 pawn. Both sides are bringing pieces into the game.' },
+  { san: 'Bc4', title: 'Target the f7 square', body: 'The bishop aims at f7, a sensitive opening square. White can now prepare to castle.' }
 ];
+const VALUES = { p: 100, n: 320, b: 335, r: 500, q: 900, k: 20000 };
 const freshGame = () => new Chess();
 
+function evaluateWhite(game) {
+  if (game.isCheckmate()) return game.turn() === 'w' ? -100000 : 100000;
+  if (game.isDraw()) return 0;
+  const board = game.board();
+  let score = 0;
+  for (let r = 0; r < 8; r += 1) {
+    for (let c = 0; c < 8; c += 1) {
+      const p = board[r][c];
+      if (!p) continue;
+      const sign = p.color === 'w' ? 1 : -1;
+      const center = 3.5 - (Math.abs(3.5 - r) + Math.abs(3.5 - c)) / 2;
+      const positional = p.type === 'p' ? (p.color === 'w' ? (6 - r) : (r - 1)) * 5 : center * (p.type === 'n' || p.type === 'b' ? 8 : 2);
+      score += sign * (VALUES[p.type] + positional);
+    }
+  }
+  return score;
+}
+
+function minimax(game, depth, alpha, beta, rootColor) {
+  if (depth <= 0 || game.isGameOver()) {
+    const whiteScore = evaluateWhite(game);
+    return rootColor === 'w' ? whiteScore : -whiteScore;
+  }
+  const maximizing = game.turn() === rootColor;
+  const moves = game.moves({ verbose: true });
+  if (maximizing) {
+    let best = -Infinity;
+    for (const move of moves) {
+      const next = new Chess(game.fen());
+      next.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' });
+      best = Math.max(best, minimax(next, depth - 1, alpha, beta, rootColor));
+      alpha = Math.max(alpha, best);
+      if (beta <= alpha) break;
+    }
+    return best;
+  }
+  let best = Infinity;
+  for (const move of moves) {
+    const next = new Chess(game.fen());
+    next.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' });
+    best = Math.min(best, minimax(next, depth - 1, alpha, beta, rootColor));
+    beta = Math.min(beta, best);
+    if (beta <= alpha) break;
+  }
+  return best;
+}
+
+function chooseLocalMove(fen, level) {
+  const game = new Chess(fen);
+  const rootColor = game.turn();
+  const depth = level === 'Hard' ? 3 : level === 'Medium' ? 2 : 1;
+  let bestMove = null;
+  let bestScore = -Infinity;
+  const moves = game.moves({ verbose: true });
+  for (const move of moves) {
+    const next = new Chess(fen);
+    next.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' });
+    const score = minimax(next, depth - 1, -Infinity, Infinity, rootColor);
+    const tieBreak = Math.random() * 0.15;
+    if (score + tieBreak > bestScore) {
+      bestScore = score + tieBreak;
+      bestMove = { from: move.from, to: move.to, promotion: move.promotion || 'q' };
+    }
+  }
+  return bestMove;
+}
+
+async function getStockfishMove(fen, level) {
+  const depth = level === 'Hard' ? 14 : level === 'Medium' ? 9 : 5;
+  const url = 'https://stockfish.online/api/s/v2.php?fen=' + encodeURIComponent(fen) + '&depth=' + depth;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Stockfish service unavailable');
+  const data = await response.json();
+  const raw = String(data.bestmove || data.bestMove || '');
+  const match = raw.match(/bestmove\\s+([a-h][1-8][a-h][1-8][qrbn]?)/i) || raw.match(/^([a-h][1-8][a-h][1-8][qrbn]?)/i);
+  if (!match) throw new Error('No legal engine move returned');
+  const uci = match[1];
+  return {
+    from: uci.slice(0, 2),
+    to: uci.slice(2, 4),
+    promotion: uci[4] || 'q'
+  };
+}
+
 export default function App() {
+  const { width } = useWindowDimensions();
   const [game, setGame] = useState(freshGame);
   const [selected, setSelected] = useState(null);
   const [targets, setTargets] = useState([]);
-  const [moves, setMoves] = useState([]);
+  const [history, setHistory] = useState([]);
   const [lessonIndex, setLessonIndex] = useState(0);
   const [tab, setTab] = useState('Learn');
-  const [message, setMessage] = useState('Tap a piece, then tap a highlighted square.');
-
+  const [level, setLevel] = useState('Medium');
+  const [message, setMessage] = useState('Choose a piece, then tap a highlighted square.');
+  const [aiThinking, setAiThinking] = useState(false);
+  const [engineLabel, setEngineLabel] = useState('Ready to play');
+  const aiBusy = useRef(false);
+  const currentLesson = LESSONS[lessonIndex] || null;
+  const boardSize = Math.min(width - 44, 430);
   const board = game.board();
-  const legalTargets = (square) => game.moves({ square, verbose: true }).map(m => m.to);
-  const status = game.isCheckmate() ? `Checkmate — ${game.turn() === 'w' ? 'Black' : 'White'} wins` : game.isDraw() ? 'Draw game' : `${game.turn() === 'w' ? 'White' : 'Black'} to move${game.isCheck() ? ' · Check' : ''}`;
-  const currentLesson = LESSON[lessonIndex] || null;
+
+  const status = game.isCheckmate()
+    ? 'Checkmate · ' + (game.turn() === 'w' ? 'Black' : 'White') + ' wins'
+    : game.isDraw()
+      ? 'Draw game'
+      : (game.turn() === 'w' ? 'White' : 'Black') + ' to move' + (game.isCheck() ? ' · Check' : '');
+
+  function legalTargets(square) {
+    return game.moves({ square, verbose: true }).map(move => move.to);
+  }
+
+  function recordPosition(next, move, note) {
+    setGame(next);
+    setHistory(next.history());
+    setSelected(null);
+    setTargets([]);
+    if (note) setMessage(note);
+    if (move && tab === 'Learn') {
+      const lesson = LESSONS[lessonIndex];
+      if (lesson && move.san === lesson.san) {
+        setLessonIndex(index => Math.min(index + 1, LESSONS.length));
+        setMessage('Great move! ' + lesson.title + '. ' + lesson.body);
+      }
+    }
+  }
 
   function selectSquare(square) {
+    if (game.isGameOver()) return;
+    if (tab === 'Play' && game.turn() === 'b') return;
     if (selected && targets.includes(square)) {
       const next = new Chess(game.fen());
       try {
         const move = next.move({ from: selected, to: square, promotion: 'q' });
         if (move) {
-          setGame(next);
-          setMoves(old => [...old, { san: move.san, color: move.color, fen: next.fen() }]);
-          setSelected(null); setTargets([]);
-          const lesson = LESSON[lessonIndex];
-          if (lesson && move.san === lesson.san) {
-            setLessonIndex(i => Math.min(i + 1, LESSON.length));
-            setMessage(`Nice! ${lesson.title}. ${lesson.body}`);
-          } else {
-            setMessage('Legal move played. Tip: develop your pieces and fight for the centre.');
-          }
+          recordPosition(next, move, 'Nice move: ' + move.san + '. ' + (next.isCheck() ? 'Check!' : 'Keep developing and watch your opponent threats.'));
           return;
         }
-      } catch (e) { /* Illegal moves are ignored by the UI. */ }
+      } catch (error) {
+        // The board stays unchanged if a move is rejected.
+      }
     }
     const piece = game.get(square);
     if (piece && piece.color === game.turn()) {
-      setSelected(square); setTargets(legalTargets(square));
-      setMessage(`${piece.color === 'w' ? 'White' : 'Black'} ${piece.type.toUpperCase()} selected. Choose a highlighted square.`);
+      setSelected(square);
+      setTargets(legalTargets(square));
+      setMessage((piece.color === 'w' ? 'White ' : 'Black ') + piece.type.toUpperCase() + ' selected. Pick a highlighted square.');
     } else {
-      setSelected(null); setTargets([]);
-      setMessage('That move is not legal. Select one of your pieces and choose a highlighted square.');
+      setSelected(null);
+      setTargets([]);
+      setMessage('That square is not a legal destination. Select one of your pieces.');
     }
   }
 
   function undo() {
-    if (!moves.length) return;
-    const next = new Chess();
-    moves.slice(0, -1).forEach(m => { try { next.load(m.fen); } catch {} });
-    // Rebuild by replaying SAN for reliable undo.
+    if (!history.length) return;
+    const removeCount = tab === 'Play' ? Math.min(2, history.length) : 1;
+    const remaining = history.slice(0, -removeCount);
     const replay = freshGame();
-    moves.slice(0, -1).forEach(m => { try { replay.move(m.san); } catch {} });
-    setGame(replay); setMoves(old => old.slice(0, -1)); setSelected(null); setTargets([]);
-    setLessonIndex(Math.min(moves.length - 1, LESSON.length)); setMessage('Last move taken back. Try a different idea.');
+    remaining.forEach(san => {
+      try { replay.move(san); } catch (error) {}
+    });
+    setGame(replay);
+    setHistory(remaining);
+    setSelected(null);
+    setTargets([]);
+    setMessage('Last move' + (removeCount === 2 ? ' pair' : '') + ' undone. Try another plan.');
   }
-  function restart() { setGame(freshGame()); setSelected(null); setTargets([]); setMoves([]); setLessonIndex(0); setMessage('New game. Start with 1. e4 to control the centre.'); }
+
+  function restart() {
+    const next = freshGame();
+    setGame(next);
+    setHistory([]);
+    setSelected(null);
+    setTargets([]);
+    setLessonIndex(0);
+    setMessage(tab === 'Play' ? 'New game. You are White; make the first move.' : 'New game. Start with 1. e4 to control the centre.');
+    setEngineLabel('Ready to play');
+  }
+
   function playLessonMove() {
-    if (!currentLesson) { setMessage('Opening lesson complete! Restart to practise it again.'); return; }
+    if (!currentLesson) {
+      setMessage('Opening lesson complete! Restart to practise it again.');
+      return;
+    }
     const next = new Chess(game.fen());
     try {
       const move = next.move(currentLesson.san);
-      if (!move) { setMessage('This lesson move is not legal in the current position. Restart the lesson to continue.'); return; }
-      setGame(next); setMoves(old => [...old, { san: move.san, color: move.color, fen: next.fen() }]);
-      setLessonIndex(i => Math.min(i + 1, LESSON.length)); setSelected(null); setTargets([]);
-      setMessage(`${currentLesson.title}. ${currentLesson.body}`);
-    } catch { setMessage('This lesson move is not legal here. Restart the lesson to continue.'); }
+      if (!move) {
+        setMessage('This lesson move does not fit the current position. Restart the lesson to begin again.');
+        return;
+      }
+      setGame(next);
+      setHistory(next.history());
+      setLessonIndex(index => Math.min(index + 1, LESSONS.length));
+      setSelected(null);
+      setTargets([]);
+      setMessage(currentLesson.title + '. ' + currentLesson.body);
+    } catch (error) {
+      setMessage('Restart the lesson to continue from the starting position.');
+    }
   }
+
+  useEffect(() => {
+    if (tab !== 'Play' || game.turn() !== 'b' || game.isGameOver() || aiBusy.current) return undefined;
+    let cancelled = false;
+    aiBusy.current = true;
+    setAiThinking(true);
+    setMessage('The coach is thinking…');
+    (async () => {
+      let move = null;
+      try {
+        move = await getStockfishMove(game.fen(), level);
+        if (!cancelled) setEngineLabel('Stockfish online');
+      } catch (error) {
+        move = chooseLocalMove(game.fen(), level);
+        if (!cancelled) setEngineLabel('Built-in AI · offline fallback');
+      }
+      if (!cancelled && move) {
+        const next = new Chess(game.fen());
+        try {
+          const played = next.move(move);
+          if (played) {
+            setGame(next);
+            setHistory(next.history());
+            setSelected(null);
+            setTargets([]);
+            setMessage('Computer played ' + played.san + '. Find your next plan.');
+          }
+        } catch (error) {
+          setMessage('The engine returned an invalid move. Please try again.');
+        }
+      }
+      aiBusy.current = false;
+      if (!cancelled) setAiThinking(false);
+    })();
+    return () => {
+      cancelled = true;
+      aiBusy.current = false;
+    };
+  }, [tab, game, level]);
+
   const movePairs = useMemo(() => {
     const pairs = [];
-    for (let i = 0; i < moves.length; i += 2) pairs.push(`${Math.floor(i / 2) + 1}. ${moves[i].san}${moves[i + 1] ? '  ' + moves[i + 1].san : ''}`);
+    for (let i = 0; i < history.length; i += 2) {
+      pairs.push({
+        number: Math.floor(i / 2) + 1,
+        white: history[i],
+        black: history[i + 1] || ''
+      });
+    }
     return pairs;
-  }, [moves]);
+  }, [history]);
+
+  const progress = Math.min(lessonIndex, LESSONS.length);
+  const isAiTurn = tab === 'Play' && game.turn() === 'b' && !game.isGameOver();
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#0b1020" />
-      <ScrollView contentContainerStyle={styles.page}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+      <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View><Text style={styles.eyebrow}>YOUR PERSONAL CHESS TRAINER</Text><Text style={styles.brand}>Chess Coach <Text style={styles.brandAccent}>AI</Text></Text></View>
-          <View style={styles.level}><Text style={styles.levelText}>♟ BEGINNER</Text></View>
+          <View style={styles.brandBlock}>
+            <Text style={styles.eyebrow}>THINK. PLAY. IMPROVE.</Text>
+            <Text style={styles.brand}>Chess Coach <Text style={styles.brandAccent}>AI</Text></Text>
+            <Text style={styles.tagline}>Your personal chess training room</Text>
+          </View>
+          <View style={styles.levelBadge}><Text style={styles.levelBadgeText}>♟ BEGINNER</Text></View>
         </View>
+
         <View style={styles.tabs}>
-          {['Learn', 'Play', 'Review'].map(t => <Pressable key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}><Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t}</Text></Pressable>)}
+          {['Learn', 'Play', 'Review'].map(item => (
+            <Pressable key={item} onPress={() => setTab(item)} style={[styles.tab, tab === item && styles.tabActive]}>
+              <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>{item}</Text>
+            </Pressable>
+          ))}
         </View>
-        <View style={styles.card}>
-          <View style={styles.boardTop}><View><Text style={styles.cardTitle}>{tab === 'Learn' ? 'The Italian Game' : tab === 'Play' ? 'Practice board' : 'Game review'}</Text><Text style={styles.subtle}>{status}</Text></View><View style={styles.dot} /></View>
-          <View style={styles.board}>
+
+        {tab === 'Play' && (
+          <View style={styles.difficultyCard}>
+            <View style={styles.difficultyHeading}>
+              <Text style={styles.sectionTitle}>Play the computer</Text>
+              <Text style={styles.onlineTag}>● ENGINE</Text>
+            </View>
+            <Text style={styles.helper}>Choose how challenging your opponent should be.</Text>
+            <View style={styles.levels}>
+              {['Easy', 'Medium', 'Hard'].map(item => (
+                <Pressable key={item} onPress={() => setLevel(item)} style={[styles.levelButton, level === item && styles.levelButtonActive]}>
+                  <Text style={[styles.levelText, level === item && styles.levelTextActive]}>{item}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+
+        <View style={styles.boardCard}>
+          <View style={styles.boardHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.boardTitle}>{tab === 'Learn' ? 'The Italian Game' : tab === 'Play' ? 'You vs Computer' : 'Game review'}</Text>
+              <Text style={styles.status}>{aiThinking ? 'Computer is thinking…' : status}</Text>
+            </View>
+            <View style={[styles.statusDot, game.isGameOver() && styles.statusDotEnd]} />
+          </View>
+
+          {tab === 'Play' && (
+            <View style={styles.playerRow}>
+              <View style={styles.avatar}><Text style={styles.avatarText}>♟</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.playerName}>Chess Coach AI</Text>
+                <Text style={styles.playerMeta}>{level} level · Black pieces</Text>
+              </View>
+              <Text style={styles.playerRating}>ENGINE</Text>
+            </View>
+          )}
+
+          <View style={[styles.board, { width: boardSize, height: boardSize }]}>
             {board.map((row, r) => row.map((piece, c) => {
-              const square = `${FILES[c]}${8-r}`;
+              const square = FILES[c] + String(8 - r);
               const light = (r + c) % 2 === 0;
               const isTarget = targets.includes(square);
               const isSelected = selected === square;
-              return <Pressable key={square} onPress={() => selectSquare(square)} style={[styles.square, { backgroundColor: isSelected ? '#d9c65a' : light ? '#e8e2d5' : '#77927d' }]}>
-                {isTarget && <View style={[styles.target, piece ? styles.targetCapture : null]} />}
-                {!!piece && <Text style={[styles.piece, { color: piece.color === 'w' ? '#fffdf5' : '#17211c', textShadowColor: piece.color === 'w' ? '#1c2922' : '#e9e6da' }]}>{PIECES[`${piece.color}${piece.type.toUpperCase()}`]}</Text>}
-                {c === 0 && <Text style={styles.rank}>{8-r}</Text>}{r === 7 && <Text style={styles.file}>{FILES[c]}</Text>}
-              </Pressable>;
+              return (
+                <Pressable
+                  key={square}
+                  disabled={aiThinking || (tab === 'Play' && game.turn() === 'b')}
+                  onPress={() => selectSquare(square)}
+                  style={[styles.square, {
+                    width: boardSize / 8,
+                    height: boardSize / 8,
+                    backgroundColor: isSelected ? '#d6c45e' : light ? COLORS.light : COLORS.dark
+                  }]}
+                >
+                  {isTarget && <View style={[styles.target, piece && styles.targetCapture]} />}
+                  {!!piece && (
+                    <Text style={[styles.piece, {
+                      fontSize: Math.max(22, boardSize / 12),
+                      color: piece.color === 'w' ? '#fffdf5' : '#17211c',
+                      textShadowColor: piece.color === 'w' ? '#24352b' : '#f4f0e5'
+                    }]}>{PIECES[piece.color + piece.type.toUpperCase()]}</Text>
+                  )}
+                  {c === 0 && <Text style={styles.rank}>{8 - r}</Text>}
+                  {r === 7 && <Text style={styles.file}>{FILES[c]}</Text>}
+                </Pressable>
+              );
             }))}
           </View>
-          <View style={styles.boardActions}>
-            <Pressable onPress={undo} style={styles.secondaryButton}><Text style={styles.secondaryText}>↶ Undo</Text></Pressable>
-            <Pressable onPress={playLessonMove} style={styles.primaryButton}><Text style={styles.primaryText}>{currentLesson ? `Next lesson move  →` : 'Lesson complete ✓'}</Text></Pressable>
-            <Pressable onPress={restart} style={styles.secondaryButton}><Text style={styles.secondaryText}>↻</Text></Pressable>
+
+          {tab === 'Play' && (
+            <View style={styles.playerRowBottom}>
+              <View style={styles.avatarYou}><Text style={styles.avatarText}>YOU</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.playerName}>You</Text>
+                <Text style={styles.playerMeta}>White pieces</Text>
+              </View>
+              {aiThinking ? <ActivityIndicator color={COLORS.green} /> : <Text style={styles.turnLabel}>{game.turn() === 'w' && !game.isGameOver() ? 'YOUR TURN' : game.isGameOver() ? 'FINISHED' : 'WAITING'}</Text>}
+            </View>
+          )}
+
+          <View style={styles.actions}>
+            <Pressable onPress={undo} disabled={!history.length || aiThinking} style={[styles.secondaryButton, (!history.length || aiThinking) && styles.disabledButton]}>
+              <Text style={styles.secondaryText}>↶ Undo</Text>
+            </Pressable>
+            <Pressable onPress={tab === 'Learn' ? playLessonMove : restart} style={styles.primaryButton}>
+              <Text style={styles.primaryText}>{tab === 'Learn' ? (currentLesson ? 'Next lesson move  →' : 'Lesson complete ✓') : '↻ New game'}</Text>
+            </Pressable>
+            <Pressable onPress={restart} style={styles.secondaryButton}>
+              <Text style={styles.secondaryText}>↻</Text>
+            </Pressable>
           </View>
         </View>
+
         <View style={styles.coachCard}>
-          <View style={styles.coachIcon}><Text style={{fontSize:22}}>✦</Text></View>
-          <View style={{flex:1}}><Text style={styles.coachTitle}>Coach's tip</Text><Text style={styles.coachBody}>{message}</Text></View>
+          <View style={styles.coachIcon}><Text style={styles.coachIconText}>✦</Text></View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.coachTitleRow}>
+              <Text style={styles.coachTitle}>Coach's corner</Text>
+              {tab === 'Play' && <Text style={styles.engineState}>{engineLabel}</Text>}
+            </View>
+            <Text style={styles.coachBody}>{message}</Text>
+          </View>
         </View>
-        <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>{tab === 'Review' ? 'Move history' : 'Your learning path'}</Text><Text style={styles.subtle}>{tab === 'Review' ? `${moves.length} plies` : `${Math.min(lessonIndex, LESSON.length)}/${LESSON.length} steps`}</Text></View>
-        {tab === 'Review' ? <View style={styles.cardSmall}>{movePairs.length ? movePairs.map((m,i) => <Text key={i} style={styles.moveText}>{m}</Text>) : <Text style={styles.subtle}>Play a few moves to build your review.</Text>}</View> : <View style={styles.lessonList}>{LESSON.map((lesson, i) => <View key={lesson.san} style={styles.lessonRow}><View style={[styles.lessonNumber, i < lessonIndex && styles.lessonDone]}><Text style={styles.lessonNumberText}>{i < lessonIndex ? '✓' : String(i+1).padStart(2,'0')}</Text></View><View style={{flex:1}}><Text style={styles.lessonTitle}>{lesson.title}</Text><Text style={styles.lessonDesc}>{lesson.body}</Text></View><Text style={styles.lessonSan}>{lesson.san}</Text></View>)}</View>}
-        <View style={styles.engineNotice}><View style={styles.engineDot}/><View style={{flex:1}}><Text style={styles.engineTitle}>Stockfish engine · Next integration step</Text><Text style={styles.engineBody}>This starter has legal chess moves and a guided opening lesson. Real engine evaluations and move-strength labels will be connected in Step 2.</Text></View></View>
-        <Text style={styles.footer}>CHESS COACH AI  •  BUILD 0.1.0</Text>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{tab === 'Review' ? 'Move history' : tab === 'Play' ? 'Your match' : 'Your learning path'}</Text>
+          <Text style={styles.counter}>{tab === 'Review' ? history.length + ' plies' : tab === 'Play' ? level + ' AI' : progress + '/' + LESSONS.length + ' steps'}</Text>
+        </View>
+
+        {tab === 'Review' ? (
+          <View style={styles.reviewCard}>
+            {movePairs.length ? movePairs.map(pair => (
+              <View key={pair.number} style={styles.moveRow}>
+                <Text style={styles.moveNumber}>{pair.number}.</Text>
+                <Text style={styles.moveSan}>{pair.white}</Text>
+                <Text style={styles.moveSan}>{pair.black || '…'}</Text>
+              </View>
+            )) : <Text style={styles.emptyText}>Your moves will appear here when you start playing.</Text>}
+          </View>
+        ) : tab === 'Play' ? (
+          <View style={styles.reviewCard}>
+            <View style={styles.matchStat}><Text style={styles.statLabel}>MOVES PLAYED</Text><Text style={styles.statValue}>{history.length}</Text></View>
+            <View style={styles.matchStat}><Text style={styles.statLabel}>CURRENT LEVEL</Text><Text style={styles.statValue}>{level}</Text></View>
+            <View style={styles.matchStat}><Text style={styles.statLabel}>ENGINE</Text><Text style={styles.statValueSmall}>{engineLabel}</Text></View>
+            <Text style={styles.helper}>Stockfish is used when its free online service is reachable. If it is unavailable, the built-in chess AI takes over automatically.</Text>
+          </View>
+        ) : (
+          <View style={styles.lessonList}>
+            {LESSONS.map((lesson, index) => (
+              <View key={lesson.san} style={styles.lessonRow}>
+                <View style={[styles.lessonNumber, index < lessonIndex && styles.lessonDone]}>
+                  <Text style={styles.lessonNumberText}>{index < lessonIndex ? '✓' : String(index + 1).padStart(2, '0')}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.lessonTitle}>{lesson.title}</Text>
+                  <Text style={styles.lessonDesc}>{lesson.body}</Text>
+                </View>
+                <Text style={styles.lessonSan}>{lesson.san}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.featureCard}>
+          <Text style={styles.featureTitle}>BUILT FOR YOUR NEXT MOVE</Text>
+          <View style={styles.featureGrid}>
+            <View style={styles.featureItem}><Text style={styles.featureIcon}>♟</Text><Text style={styles.featureName}>Legal moves</Text></View>
+            <View style={styles.featureItem}><Text style={styles.featureIcon}>⚡</Text><Text style={styles.featureName}>AI opponent</Text></View>
+            <View style={styles.featureItem}><Text style={styles.featureIcon}>♜</Text><Text style={styles.featureName}>Move review</Text></View>
+          </View>
+          <Text style={styles.licenseNote}>Stockfish is GPLv3 software. This app connects to a public Stockfish analysis service; the built-in AI is used as a fallback.</Text>
+        </View>
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.2.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:{flex:1,backgroundColor:'#0b1020'}, page:{padding:18,paddingBottom:36,gap:16}, header:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingTop:8}, eyebrow:{fontSize:9,letterSpacing:2,color:'#8f9bb6',fontWeight:'800'}, brand:{fontSize:26,fontWeight:'900',color:'#f5f7fb',letterSpacing:-.7,marginTop:4}, brandAccent:{color:'#9fe870'}, level:{borderWidth:1,borderColor:'#2d3b4c',paddingHorizontal:10,paddingVertical:7,borderRadius:20}, levelText:{fontSize:10,color:'#b7c2d5',fontWeight:'800'}, tabs:{flexDirection:'row',backgroundColor:'#111a2b',padding:4,borderRadius:14}, tab:{flex:1,alignItems:'center',paddingVertical:10,borderRadius:10}, tabActive:{backgroundColor:'#263449'}, tabText:{color:'#7e8aa3',fontWeight:'700',fontSize:13}, tabTextActive:{color:'#f5f7fb'}, card:{backgroundColor:'#111a2b',borderRadius:20,padding:12,borderWidth:1,borderColor:'#202c40'}, boardTop:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:4,paddingBottom:12}, cardTitle:{fontSize:17,color:'#f4f6fb',fontWeight:'800'}, subtle:{color:'#8c99b2',fontSize:11,marginTop:3}, dot:{width:8,height:8,borderRadius:4,backgroundColor:'#9fe870'}, board:{width:'100%',aspectRatio:1,flexDirection:'row',flexWrap:'wrap',overflow:'hidden',borderRadius:4}, square:{width:'12.5%',height:'12.5%',alignItems:'center',justifyContent:'center'}, piece:{fontSize:29,fontWeight:'400',textShadowOffset:{width:1,height:1},textShadowRadius:1}, rank:{position:'absolute',top:2,left:3,fontSize:8,color:'#17211c',fontWeight:'800'}, file:{position:'absolute',bottom:1,right:3,fontSize:8,color:'#17211c',fontWeight:'800'}, target:{position:'absolute',width:12,height:12,borderRadius:9,backgroundColor:'#233d2c',opacity:.65}, targetCapture:{width:'85%',height:'85%',backgroundColor:'transparent',borderWidth:3,borderColor:'#233d2c'}, boardActions:{flexDirection:'row',alignItems:'center',gap:8,marginTop:12}, primaryButton:{flex:1,backgroundColor:'#9fe870',paddingVertical:12,borderRadius:11,alignItems:'center'}, primaryText:{fontSize:12,color:'#142019',fontWeight:'900'}, secondaryButton:{backgroundColor:'#1d293c',paddingHorizontal:12,paddingVertical:12,borderRadius:11,alignItems:'center'}, secondaryText:{color:'#d7deeb',fontWeight:'800',fontSize:12}, coachCard:{flexDirection:'row',gap:12,backgroundColor:'#15231f',borderWidth:1,borderColor:'#284236',borderRadius:16,padding:14}, coachIcon:{width:38,height:38,borderRadius:12,backgroundColor:'#254533',alignItems:'center',justifyContent:'center'}, coachTitle:{color:'#b8f59b',fontWeight:'800',fontSize:13,marginBottom:5}, coachBody:{color:'#d4dfd8',fontSize:12,lineHeight:18}, sectionHeader:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:2}, sectionTitle:{color:'#f3f5fb',fontSize:16,fontWeight:'800'}, lessonList:{gap:10}, lessonRow:{flexDirection:'row',alignItems:'flex-start',gap:10,backgroundColor:'#111a2b',borderRadius:14,padding:12,borderWidth:1,borderColor:'#202c40'}, lessonNumber:{width:30,height:30,borderRadius:10,backgroundColor:'#263449',alignItems:'center',justifyContent:'center'}, lessonDone:{backgroundColor:'#24472d'}, lessonNumberText:{fontSize:10,fontWeight:'900',color:'#c8d3e4'}, lessonTitle:{fontSize:12,fontWeight:'800',color:'#edf1f8',marginTop:1}, lessonDesc:{fontSize:11,lineHeight:16,color:'#8e9bb3',marginTop:4}, lessonSan:{color:'#9fe870',fontSize:12,fontWeight:'900',paddingTop:4}, cardSmall:{backgroundColor:'#111a2b',padding:14,borderRadius:14,borderWidth:1,borderColor:'#202c40',gap:8}, moveText:{color:'#d7deeb',fontSize:13,fontVariant:['tabular-nums']}, engineNotice:{flexDirection:'row',gap:10,padding:13,borderRadius:14,backgroundColor:'#111827',borderWidth:1,borderColor:'#29344a'}, engineDot:{width:8,height:8,borderRadius:4,backgroundColor:'#f4c76a',marginTop:4}, engineTitle:{color:'#dce4f2',fontSize:11,fontWeight:'800'}, engineBody:{color:'#8794ad',fontSize:10,lineHeight:15,marginTop:4}, footer:{textAlign:'center',fontSize:9,letterSpacing:2,color:'#4f5b72',marginTop:2}
+  safe: { flex: 1, backgroundColor: COLORS.bg },
+  page: { padding: 18, paddingBottom: 38, gap: 16, alignItems: 'center' },
+  header: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 },
+  brandBlock: { flex: 1 },
+  eyebrow: { fontSize: 9, letterSpacing: 2, color: COLORS.muted, fontWeight: '900' },
+  brand: { fontSize: 27, fontWeight: '900', color: COLORS.text, letterSpacing: -0.8, marginTop: 4 },
+  brandAccent: { color: COLORS.green },
+  tagline: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
+  levelBadge: { borderWidth: 1, borderColor: COLORS.line, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 20, backgroundColor: COLORS.panel },
+  levelBadgeText: { fontSize: 9, color: '#c3cde0', fontWeight: '900' },
+  tabs: { width: '100%', flexDirection: 'row', backgroundColor: COLORS.panel, padding: 4, borderRadius: 14, borderWidth: 1, borderColor: '#1e2a3e' },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 10 },
+  tabActive: { backgroundColor: '#2a3b52' },
+  tabText: { color: '#8290a8', fontWeight: '800', fontSize: 13 },
+  tabTextActive: { color: COLORS.text },
+  difficultyCard: { width: '100%', backgroundColor: COLORS.panel, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: COLORS.line, gap: 8 },
+  difficultyHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '900' },
+  onlineTag: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  helper: { color: COLORS.muted, fontSize: 11, lineHeight: 17 },
+  levels: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  levelButton: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line },
+  levelButtonActive: { backgroundColor: '#29452f', borderColor: '#5f9e50' },
+  levelText: { color: '#a8b4c8', fontWeight: '800', fontSize: 12 },
+  levelTextActive: { color: COLORS.green },
+  boardCard: { width: '100%', backgroundColor: COLORS.panel, borderRadius: 20, padding: 12, borderWidth: 1, borderColor: '#26344a', alignItems: 'center' },
+  boardHeader: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4, paddingBottom: 12 },
+  boardTitle: { fontSize: 17, color: COLORS.text, fontWeight: '900' },
+  status: { color: COLORS.muted, fontSize: 11, marginTop: 4 },
+  statusDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: COLORS.green },
+  statusDotEnd: { backgroundColor: COLORS.gold },
+  playerRow: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 3, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#26344a', marginBottom: 10 },
+  playerRowBottom: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 3, paddingVertical: 9, borderTopWidth: 1, borderTopColor: '#26344a', marginTop: 10 },
+  avatar: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#28394d', alignItems: 'center', justifyContent: 'center' },
+  avatarYou: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#315137', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: COLORS.text, fontWeight: '900', fontSize: 12 },
+  playerName: { color: COLORS.text, fontWeight: '800', fontSize: 12 },
+  playerMeta: { color: COLORS.muted, fontSize: 10, marginTop: 2 },
+  playerRating: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  turnLabel: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  board: { flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden', borderRadius: 5, alignSelf: 'center' },
+  square: { alignItems: 'center', justifyContent: 'center' },
+  piece: { fontWeight: '400', textAlign: 'center', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 2 },
+  rank: { position: 'absolute', top: 2, left: 3, fontSize: 8, color: '#17211c', fontWeight: '900' },
+  file: { position: 'absolute', bottom: 1, right: 3, fontSize: 8, color: '#17211c', fontWeight: '900' },
+  target: { position: 'absolute', width: 12, height: 12, borderRadius: 8, backgroundColor: '#213d2b', opacity: 0.65 },
+  targetCapture: { width: '86%', height: '86%', backgroundColor: 'transparent', borderWidth: 3, borderColor: '#213d2b' },
+  actions: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  primaryButton: { flex: 1, backgroundColor: COLORS.green, paddingVertical: 13, borderRadius: 11, alignItems: 'center' },
+  primaryText: { fontSize: 12, color: '#142019', fontWeight: '900' },
+  secondaryButton: { backgroundColor: '#202e43', paddingHorizontal: 13, paddingVertical: 13, borderRadius: 11, alignItems: 'center' },
+  secondaryText: { color: '#d7deeb', fontWeight: '800', fontSize: 12 },
+  disabledButton: { opacity: 0.4 },
+  coachCard: { width: '100%', flexDirection: 'row', gap: 12, backgroundColor: '#14241e', borderWidth: 1, borderColor: '#2b4a37', borderRadius: 16, padding: 14 },
+  coachIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#294a34', alignItems: 'center', justifyContent: 'center' },
+  coachIconText: { fontSize: 22, color: COLORS.green },
+  coachTitleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  coachTitle: { color: '#c1f5a7', fontWeight: '900', fontSize: 13, marginBottom: 5 },
+  engineState: { color: '#9eb29f', fontSize: 9, fontWeight: '700' },
+  coachBody: { color: '#d4dfd8', fontSize: 12, lineHeight: 18 },
+  sectionHeader: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
+  counter: { color: COLORS.muted, fontSize: 11, fontWeight: '700' },
+  lessonList: { width: '100%', gap: 10 },
+  lessonRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: COLORS.panel, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#202c40' },
+  lessonNumber: { width: 30, height: 30, borderRadius: 10, backgroundColor: '#29394f', alignItems: 'center', justifyContent: 'center' },
+  lessonDone: { backgroundColor: '#285037' },
+  lessonNumberText: { fontSize: 10, fontWeight: '900', color: '#d4deec' },
+  lessonTitle: { fontSize: 12, fontWeight: '900', color: '#edf1f8', marginTop: 1 },
+  lessonDesc: { fontSize: 11, lineHeight: 16, color: '#8e9bb3', marginTop: 4 },
+  lessonSan: { color: COLORS.green, fontSize: 12, fontWeight: '900', paddingTop: 4 },
+  reviewCard: { width: '100%', backgroundColor: COLORS.panel, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#202c40', gap: 10 },
+  moveRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#202c40' },
+  moveNumber: { width: 24, color: COLORS.muted, fontSize: 12 },
+  moveSan: { flex: 1, color: '#d7deeb', fontSize: 13, fontWeight: '700' },
+  emptyText: { color: COLORS.muted, fontSize: 11 },
+  matchStat: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#26344a' },
+  statLabel: { color: COLORS.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  statValue: { color: COLORS.text, fontSize: 16, fontWeight: '900' },
+  statValueSmall: { color: COLORS.green, fontSize: 11, fontWeight: '800' },
+  featureCard: { width: '100%', padding: 14, backgroundColor: '#101827', borderWidth: 1, borderColor: '#29364b', borderRadius: 15, gap: 12 },
+  featureTitle: { color: '#aab7cb', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
+  featureGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  featureItem: { flex: 1, alignItems: 'center', gap: 5, backgroundColor: '#192438', paddingVertical: 12, borderRadius: 11 },
+  featureIcon: { color: COLORS.green, fontSize: 20 },
+  featureName: { color: '#c6d0df', fontSize: 9, fontWeight: '800' },
+  licenseNote: { color: '#78869e', fontSize: 9, lineHeight: 14 },
+  footer: { width: '100%', textAlign: 'center', fontSize: 9, letterSpacing: 2, color: '#59667c', marginTop: 2 }
 });

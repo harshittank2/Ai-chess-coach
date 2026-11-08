@@ -2,10 +2,18 @@
   "expo": {
     "name": "Chess Coach AI",
     "slug": "chess-coach-ai",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "splash": {"backgroundColor": "#0b1020"},
-    "android": {"package": "com.harshit.chesscoachai"}
+    "splash": {
+      "backgroundColor": "#080d18"
+    },
+    "android": {
+      "package": "com.harshit.chesscoachai",
+      "versionCode": 2,
+      "adaptiveIcon": {
+        "backgroundColor": "#080d18"
+      }
+    }
   }
 }
