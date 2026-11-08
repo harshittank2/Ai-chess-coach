@@ -29,6 +29,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Fix Expo dependencies
+        run: npx expo install --fix
+
+      - name: Check Expo configuration
+        run: npx expo-doctor
+
       - name: Generate Android project
         run: npx expo prebuild --platform android --non-interactive
 
@@ -45,4 +51,3 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
-          
