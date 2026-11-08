@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   SafeAreaView, View, Text, Pressable, ScrollView, StyleSheet,
-  StatusBar, ActivityIndicator, useWindowDimensions
+  StatusBar, ActivityIndicator, useWindowDimensions, Animated
 } from 'react-native';
 import { Chess } from 'chess.js';
 
@@ -129,6 +129,10 @@ export default function App() {
   const [message, setMessage] = useState('Choose a piece, then tap a highlighted square.');
   const [aiThinking, setAiThinking] = useState(false);
   const [engineLabel, setEngineLabel] = useState('Ready to play');
+  const [animatedPiece, setAnimatedPiece] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const animationPosition = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const aiBusy = useRef(false);
   const currentLesson = LESSONS[lessonIndex] || null;
   const boardSize = Math.min(width - 60, 430);
@@ -144,19 +148,72 @@ export default function App() {
     return game.moves({ square, verbose: true }).map(move => move.to);
   }
 
+  function animatePosition(next, move, note, onFinish) {
+    if (!move) {
+      setGame(next);
+      setHistory(next.history());
+      if (note) setMessage(note);
+      if (onFinish) onFinish();
+      return;
+    }
+    const piece = game.get(move.from);
+    if (!piece) {
+      setGame(next);
+      setHistory(next.history());
+      if (note) setMessage(note);
+      if (onFinish) onFinish();
+      return;
+    }
+    const cell = boardSize / 8;
+    const x = square => FILES.indexOf(square[0]) * cell;
+    const y = square => (8 - Number(square[1])) * cell;
+    animationPosition.setValue({ x: x(move.from), y: y(move.from) });
+    setAnimatedPiece({ from: move.from, glyph: PIECES[piece.color + piece.type.toUpperCase()], color: piece.color });
+    Animated.timing(animationPosition, {
+      toValue: { x: x(move.to), y: y(move.to) },
+      duration: 260,
+      useNativeDriver: true
+    }).start(({ finished }) => {
+      if (!finished) return;
+      setGame(next);
+      setHistory(next.history());
+      setAnimatedPiece(null);
+      if (note) setMessage(note);
+      if (onFinish) onFinish();
+    });
+  }
+
+  async function analyzeCurrentPosition() {
+    setAnalyzing(true);
+    setAnalysis(null);
+    try {
+      const url = 'https://stockfish.online/api/s/v2.php?fen=' + encodeURIComponent(game.fen()) + '&depth=15';
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Stockfish service unavailable');
+      const data = await response.json();
+      if (data.success === false) throw new Error(data.error || 'Analysis failed');
+      setAnalysis({ evaluation: data.evaluation, mate: data.mate, bestmove: data.bestmove, continuation: data.continuation, depth: data.depth || 15 });
+      setMessage('Stockfish analysed this position. Check the engine result below.');
+      setEngineLabel('Stockfish analysis · depth 15');
+    } catch (error) {
+      setMessage('Stockfish analysis needs an internet connection. Please try again.');
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   function recordPosition(next, move, note) {
-    setGame(next);
-    setHistory(next.history());
     setSelected(null);
     setTargets([]);
-    if (note) setMessage(note);
-    if (move && tab === 'Learn') {
-      const lesson = LESSONS[lessonIndex];
-      if (lesson && move.san === lesson.san) {
-        setLessonIndex(index => Math.min(index + 1, LESSONS.length));
-        setMessage('Great move! ' + lesson.title + '. ' + lesson.body);
+    animatePosition(next, move, note, () => {
+      if (move && tab === 'Learn') {
+        const lesson = LESSONS[lessonIndex];
+        if (lesson && move.san === lesson.san) {
+          setLessonIndex(index => Math.min(index + 1, LESSONS.length));
+          setMessage('Great move! ' + lesson.title + '. ' + lesson.body);
+        }
       }
-    }
+    });
   }
 
   function selectSquare(square) {
@@ -210,6 +267,7 @@ export default function App() {
     setLessonIndex(0);
     setMessage(tab === 'Play' ? 'New game. You are White; make the first move.' : 'New game. Start with 1. e4 to control the centre.');
     setEngineLabel('Ready to play');
+    setAnalysis(null);
   }
 
   function playLessonMove() {
@@ -224,12 +282,9 @@ export default function App() {
         setMessage('This lesson move does not fit the current position. Restart the lesson to begin again.');
         return;
       }
-      setGame(next);
-      setHistory(next.history());
-      setLessonIndex(index => Math.min(index + 1, LESSONS.length));
       setSelected(null);
       setTargets([]);
-      setMessage(currentLesson.title + '. ' + currentLesson.body);
+      animatePosition(next, move, currentLesson.title + '. ' + currentLesson.body, () => setLessonIndex(index => Math.min(index + 1, LESSONS.length)));
     } catch (error) {
       setMessage('Restart the lesson to continue from the starting position.');
     }
@@ -255,11 +310,9 @@ export default function App() {
         try {
           const played = next.move(move);
           if (played) {
-            setGame(next);
-            setHistory(next.history());
             setSelected(null);
             setTargets([]);
-            setMessage('Computer played ' + played.san + '. Find your next plan.');
+            animatePosition(next, played, 'Computer played ' + played.san + '. Find your next plan.');
           }
         } catch (error) {
           setMessage('The engine returned an invalid move. Please try again.');
@@ -365,7 +418,7 @@ export default function App() {
                   }]}
                 >
                   {isTarget && <View style={[styles.target, piece && styles.targetCapture]} />}
-                  {!!piece && (
+                  {!!piece && !(animatedPiece && animatedPiece.from === square) && (
                     <Text style={[styles.piece, {
                       fontSize: Math.max(22, boardSize / 12),
                       color: piece.color === 'w' ? '#fffdf5' : '#17211c',
@@ -377,7 +430,27 @@ export default function App() {
                 </Pressable>
               );
             }))}
+            {animatedPiece && (
+              <Animated.View pointerEvents="none" style={[styles.movingPiece, { width: boardSize / 8, height: boardSize / 8 }, { transform: animationPosition.getTranslateTransform() }]}>
+                <Text style={[styles.piece, { fontSize: Math.max(22, boardSize / 12), color: animatedPiece.color === 'w' ? '#fffdf5' : '#17211c', textShadowColor: animatedPiece.color === 'w' ? '#24352b' : '#f4f0e5' }]}>{animatedPiece.glyph}</Text>
+              </Animated.View>
+            )}
           </View>
+
+          {tab === 'Review' && (
+            <View style={{ width: '100%', gap: 8, marginTop: 10 }}>
+              <Pressable onPress={analyzeCurrentPosition} disabled={analyzing} style={styles.primaryButton}>
+                {analyzing ? <ActivityIndicator color="#10180d" /> : <Text style={styles.primaryText}>Analyse position with Stockfish</Text>}
+              </Pressable>
+              {analysis && (
+                <View style={styles.analysisCard}>
+                  <Text style={styles.coachTitle}>Stockfish · depth {analysis.depth}</Text>
+                  <Text style={styles.coachBody}>Evaluation: {analysis.mate !== null && analysis.mate !== undefined ? 'Mate in ' + analysis.mate : (Number(analysis.evaluation) > 0 ? '+' : '') + Number(analysis.evaluation || 0).toFixed(2)} · Best move: {analysis.bestmove || 'Not available'}</Text>
+                  {!!analysis.continuation && <Text style={styles.helper}>Line: {analysis.continuation}</Text>}
+                </View>
+              )}
+            </View>
+          )}
 
           {tab === 'Play' && (
             <View style={styles.playerRowBottom}>
@@ -462,7 +535,7 @@ export default function App() {
           </View>
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. This app connects to a public Stockfish analysis service; the built-in AI is used as a fallback.</Text>
         </View>
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.2.0</Text>
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.3.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -509,7 +582,7 @@ const styles = StyleSheet.create({
   playerMeta: { color: COLORS.muted, fontSize: 10, marginTop: 2 },
   playerRating: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   turnLabel: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  board: { flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden', borderRadius: 5, alignSelf: 'center' },
+  board: { position: 'relative', flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden', borderRadius: 5, alignSelf: 'center' },
   square: { alignItems: 'center', justifyContent: 'center' },
   piece: { fontWeight: '400', textAlign: 'center', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 2 },
   rank: { position: 'absolute', top: 2, left: 3, fontSize: 8, color: '#17211c', fontWeight: '900' },
@@ -556,4 +629,6 @@ const styles = StyleSheet.create({
   featureName: { color: '#c6d0df', fontSize: 9, fontWeight: '800' },
   licenseNote: { color: '#78869e', fontSize: 9, lineHeight: 14 },
   footer: { width: '100%', textAlign: 'center', fontSize: 9, letterSpacing: 2, color: '#59667c', marginTop: 2 }
+  movingPiece: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  analysisCard: { width: '100%', backgroundColor: COLORS.panel2, borderRadius: 12, borderWidth: 1, borderColor: COLORS.line, padding: 12, gap: 6 },
 });
