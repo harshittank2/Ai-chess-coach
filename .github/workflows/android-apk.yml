@@ -46,7 +46,18 @@ jobs:
         run: node -e "for (const n of ['expo-asset','expo-constants','expo-file-system','expo-font','expo-keep-awake','@react-native-async-storage/async-storage','dawikk-stockfish']) { console.log(n + ' => ' + require.resolve(n + '/package.json')); }"
 
       - name: Generate clean Android native project
-        run: npx expo prebuild --platform android --clean --non-interactive
+        run: CI=1 npx expo prebuild --platform android --clean
+
+      - name: Free runner disk space for native engine packaging
+        run: |
+          echo "Disk space before cleanup:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell
+          sudo rm -rf /usr/local/lib/android/sdk/system-images /usr/local/lib/android/sdk/emulator
+          sudo apt-get clean
+          docker system prune -af || true
+          echo "Disk space after cleanup:"
+          df -h /
 
       - name: Assemble release APK
         run: |
