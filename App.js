@@ -96,7 +96,14 @@ function chooseLocalMove(fen, level) {
 async function getStockfishMove(fen, level) {
   const depth = level === 'Hard' ? 14 : level === 'Medium' ? 9 : 5;
   const url = 'https://stockfish.online/api/s/v2.php?fen=' + encodeURIComponent(fen) + '&depth=' + depth;
-  const response = await fetch(url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  let response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) throw new Error('Stockfish service unavailable');
   const data = await response.json();
   const raw = String(data.bestmove || data.bestMove || '');
@@ -124,7 +131,7 @@ export default function App() {
   const [engineLabel, setEngineLabel] = useState('Ready to play');
   const aiBusy = useRef(false);
   const currentLesson = LESSONS[lessonIndex] || null;
-  const boardSize = Math.min(width - 44, 430);
+  const boardSize = Math.min(width - 60, 430);
   const board = game.board();
 
   const status = game.isCheckmate()
