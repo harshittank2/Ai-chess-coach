@@ -532,18 +532,27 @@ export default function App() {
   }
 
   function undo() {
-    if (!history.length) return;
-    const removeCount = tab === 'Play' && playMode === 'computer' ? Math.min(2, history.length) : 1;
-    const remaining = history.slice(0, -removeCount);
-    const replay = freshGame();
-    remaining.forEach(san => {
-      try { replay.move(san); } catch (error) {}
-    });
+    // Rebuild from the game's actual starting FEN (important for imported PGNs),
+    // then replay all but the move(s) being undone. Never silently fall back to
+    // the standard starting position: that makes Undo look like a full reset.
+    const moves = game.history();
+    if (!moves.length) return;
+    const removeCount = tab === 'Play' && playMode === 'computer' ? Math.min(2, moves.length) : 1;
+    const headers = typeof game.getHeaders === 'function' ? game.getHeaders() : {};
+    const startFen = headers && headers.FEN ? headers.FEN : undefined;
+    const replay = startFen ? new Chess(startFen) : freshGame();
+    try {
+      moves.slice(0, -removeCount).forEach(san => replay.move(san));
+    } catch (error) {
+      setMessage('Could not undo this imported position safely. The current board was kept unchanged.');
+      return;
+    }
     setGame(replay);
-    setHistory(remaining);
+    setHistory(replay.history());
     setSelected(null);
     setTargets([]);
-    setMessage('Last move' + (removeCount === 2 ? ' pair' : '') + ' undone. Try another plan.');
+    setAnimatedPiece(null);
+    setMessage('Last move' + (removeCount === 2 ? ' pair' : '') + ' undone.');
   }
 
   function restart() {
@@ -650,8 +659,9 @@ export default function App() {
         </View>
 
         <View style={styles.tabs}>
+          {/* These are views over one shared game state; changing tabs must never start a new game. */}
           {['Learn', 'Play', 'Review'].map(item => (
-            <Pressable key={item} onPress={() => setTab(item)} style={[styles.tab, tab === item && styles.tabActive]}>
+            <Pressable key={item} onPress={() => { setSelected(null); setTargets([]); setTab(item); }} style={[styles.tab, tab === item && styles.tabActive]}>
               <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>{item}</Text>
             </Pressable>
           ))}
@@ -961,7 +971,7 @@ export default function App() {
           </View>
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. Local engine supplied by dawikk-stockfish; online analysis is an optional fallback. Source and licence details are documented in the repository README.</Text>
         </View>
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.7.0</Text>
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.7.1</Text>
       </ScrollView>
     </SafeAreaView>
   );

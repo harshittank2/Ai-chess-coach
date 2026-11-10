@@ -55,3 +55,8 @@ The local engine now follows the UCI startup handshake (`uci` / `uciok`, `isread
 Learning mode includes 12 move-by-move opening lessons: Italian Game, Ruy Lopez, Scotch Game, Queen's Gambit, King's Gambit, Evans Gambit, Danish Gambit, Smith-Morra Gambit, Sicilian Defence, French Defence, Caro-Kann Defence, and London System. Each lesson includes a main line and strategic explanation.
 
 Play mode includes **Pass & Play (Offline)** for two people sharing one device. Both sides make moves on the same board using `chess.js` legal move validation; the computer engine is not called in this mode. Standard check, checkmate, stalemate, and draw detection are provided by `chess.js`.
+
+
+## Shared board and undo fix (v0.7.1)
+
+Learn, Play, and Review are views over the same in-memory chess game. Switching tabs only changes the view and clears square selection; it does not start a new game. Undo reconstructs the position from the game’s original FEN when available (including imported PGNs), then replays all remaining moves. If reconstruction fails, the current position is left unchanged rather than resetting the board.
