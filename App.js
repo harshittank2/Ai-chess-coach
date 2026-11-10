@@ -52,6 +52,25 @@ function evaluateWhite(game) {
   const board = game.board();
 
   useEffect(() => {
+    // Each tab owns an independent Chess instance and move history.
+    boardSnapshots.current[tab] = { game, history: [...history] };
+  }, [game, history, tab]);
+
+  function switchBoardTab(nextTab) {
+    if (nextTab === tab) return;
+    // Save the board being left, then restore the destination tab's own board.
+    boardSnapshots.current[tab] = { game, history: [...history] };
+    const destination = boardSnapshots.current[nextTab] || { game: freshGame(), history: [] };
+    setGame(destination.game);
+    setHistory([...destination.history]);
+    setSelected(null);
+    setTargets([]);
+    setAnimatedPiece(null);
+    setMessage(nextTab === 'Learn' ? 'Opening lesson board' : nextTab === 'Play' ? 'Your play board' : 'Game review board');
+    setTab(nextTab);
+  }
+
+  useEffect(() => {
     let alive = true;
     AsyncStorage.getItem('chess-coach-rating-v1').then(raw => {
       if (!alive || !raw) return;
@@ -267,6 +286,7 @@ async function getStockfishMove(fen, level, mode) {
 export default function App() {
   const { width } = useWindowDimensions();
   const [game, setGame] = useState(freshGame);
+  const boardSnapshots = useRef({ Learn: { game: freshGame(), history: [] }, Play: { game: freshGame(), history: [] }, Review: { game: freshGame(), history: [] } });
   const [selected, setSelected] = useState(null);
   const [targets, setTargets] = useState([]);
   const [history, setHistory] = useState([]);
@@ -661,7 +681,7 @@ export default function App() {
         <View style={styles.tabs}>
           {/* These are views over one shared game state; changing tabs must never start a new game. */}
           {['Learn', 'Play', 'Review'].map(item => (
-            <Pressable key={item} onPress={() => { setSelected(null); setTargets([]); setTab(item); }} style={[styles.tab, tab === item && styles.tabActive]}>
+            <Pressable key={item} onPress={() => switchBoardTab(item)} style={[styles.tab, tab === item && styles.tabActive]}>
               <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>{item}</Text>
             </Pressable>
           ))}
@@ -971,7 +991,7 @@ export default function App() {
           </View>
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. Local engine supplied by dawikk-stockfish; online analysis is an optional fallback. Source and licence details are documented in the repository README.</Text>
         </View>
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.7.1</Text>
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.7.2</Text>
       </ScrollView>
     </SafeAreaView>
   );
