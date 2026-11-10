@@ -51,57 +51,6 @@ function evaluateWhite(game) {
   if (game.isDraw()) return 0;
   const board = game.board();
 
-  useEffect(() => {
-    // Each tab owns an independent Chess instance and move history.
-    boardSnapshots.current[tab] = { game, history: [...history] };
-  }, [game, history, tab]);
-
-  function switchBoardTab(nextTab) {
-    if (nextTab === tab) return;
-    // Save the board being left, then restore the destination tab's own board.
-    boardSnapshots.current[tab] = { game, history: [...history] };
-    const destination = boardSnapshots.current[nextTab] || { game: freshGame(), history: [] };
-    setGame(destination.game);
-    setHistory([...destination.history]);
-    setSelected(null);
-    setTargets([]);
-    setAnimatedPiece(null);
-    setMessage(nextTab === 'Learn' ? 'Opening lesson board' : nextTab === 'Play' ? 'Your play board' : 'Game review board');
-    setTab(nextTab);
-  }
-
-  useEffect(() => {
-    let alive = true;
-    AsyncStorage.getItem('chess-coach-rating-v1').then(raw => {
-      if (!alive || !raw) return;
-      const saved = JSON.parse(raw);
-      if (Number.isFinite(saved.playerElo)) setPlayerElo(saved.playerElo);
-      if (Number.isFinite(saved.ratedGames)) setRatedGames(saved.ratedGames);
-      if (saved.lastResult) setLastResult(saved.lastResult);
-    }).catch(() => {}).finally(() => { if (alive) setRatingReady(true); });
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => {
-    if (!ratingReady) return;
-    AsyncStorage.setItem('chess-coach-rating-v1', JSON.stringify({ playerElo, ratedGames, lastResult })).catch(() => {});
-  }, [playerElo, ratedGames, lastResult, ratingReady]);
-
-  useEffect(() => {
-    if (tab !== 'Play' || playMode !== 'computer' || !game.isGameOver() || !ratingReady) return;
-    const key = game.history().join(' ');
-    if (!key || ratedGameKey.current === key) return;
-    ratedGameKey.current = key;
-    const opponentElo = level === 'Easy' ? 650 : level === 'Medium' ? 1000 : 1450;
-    const score = game.isDraw() ? 0.5 : game.turn() === 'b' ? 1 : 0;
-    const expected = 1 / (1 + Math.pow(10, (opponentElo - playerElo) / 400));
-    const delta = Math.round(32 * (score - expected));
-    const nextRating = Math.max(100, playerElo + delta);
-    const result = score === 0.5 ? 'Draw' : score === 1 ? 'Win' : 'Loss';
-    setPlayerElo(nextRating);
-    setRatedGames(n => n + 1);
-    setLastResult({ result, delta, opponentElo, level, moves: game.history().length, date: new Date().toISOString() });
-  }, [game, tab, level, playerElo, ratingReady, playMode]);
   let score = 0;
   for (let r = 0; r < 8; r += 1) {
     for (let c = 0; c < 8; c += 1) {
@@ -320,6 +269,27 @@ export default function App() {
   const currentLesson = LESSONS[lessonIndex] || null;
   const boardSize = Math.min(width - 60, 430);
   const board = game.board();
+
+  // Persist each tab's board snapshot independently; these hooks must remain
+  // directly inside App (never inside evaluateWhite or another helper).
+  useEffect(() => {
+    boardSnapshots.current[tab] = { game, history: [...history] };
+  }, [game, history, tab]);
+
+  function switchBoardTab(nextTab) {
+    if (nextTab === tab) return;
+    boardSnapshots.current[tab] = { game, history: [...history] };
+    const destination = boardSnapshots.current[nextTab] || { game: freshGame(), history: [] };
+    setGame(destination.game);
+    setHistory([...destination.history]);
+    setSelected(null);
+    setTargets([]);
+    setAnimatedPiece(null);
+    setTab(nextTab);
+    setMessage(nextTab === 'Learn' ? 'Opening lesson board' : nextTab === 'Play' ? 'Your play board' : 'Game review board');
+  }
+
+
 
   useEffect(() => {
     let alive = true;
