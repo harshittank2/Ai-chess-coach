@@ -20,13 +20,29 @@ const PIECES = {
   wK: '♔', wQ: '♕', wR: '♖', wB: '♗', wN: '♘', wP: '♙',
   bK: '♚', bQ: '♛', bR: '♜', bB: '♝', bN: '♞', bP: '♟'
 };
-const LESSONS = [
-  { san: 'e4', title: 'Claim the centre', body: 'Your king pawn controls d5 and f5 while opening lines for your queen and bishop.' },
-  { san: 'e5', title: 'Contest the centre', body: 'Black fights for central space. Good openings are built on central control and development.' },
-  { san: 'Nf3', title: 'Develop with a threat', body: 'The knight moves toward the centre and attacks e5. Develop minor pieces before launching an attack.' },
-  { san: 'Nc6', title: 'Defend and develop', body: 'Black develops a knight and protects the e5 pawn. Both sides are bringing pieces into the game.' },
-  { san: 'Bc4', title: 'Target the f7 square', body: 'The bishop aims at f7, a sensitive opening square. White can now prepare to castle.' }
+const OPENINGS = [
+  { name: "Italian Game", tag: "Open game \u00b7 beginner", idea: "Develop quickly and aim at f7. The Giuoco Piano gives both sides natural development and central play.", moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6", "d4", "exd4", "cxd4", "Bb4+", "Nc3", "Nxe4", "O-O"] },
+  { name: "Ruy Lopez", tag: "Open game \u00b7 classical", idea: "Pressure the knight that defends e5. The Spanish Game builds long-term pressure and a strong centre.", moves: ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7"] },
+  { name: "Scotch Game", tag: "Open game \u00b7 tactical", idea: "Challenge the centre early and open lines for your pieces. The Scotch often leads to active piece play.", moves: ["e4", "e5", "Nf3", "Nc6", "d4", "exd4", "Nxd4"] },
+  { name: "Queen's Gambit", tag: "Closed game \u00b7 positional", idea: "Offer the c-pawn to challenge Black\u2019s d5 centre. It is a positional opening, not a forced pawn sacrifice.", moves: ["d4", "d5", "c4", "e6", "Nc3", "Nf6", "Bg5", "Be7"] },
+  { name: "King's Gambit", tag: "Gambit \u00b7 attacking", idea: "White sacrifices a pawn for rapid development and attacking chances. King safety matters.", moves: ["e4", "e5", "f4", "exf4", "Nf3", "g5", "h4"] },
+  { name: "Evans Gambit", tag: "Gambit \u00b7 attacking", idea: "White gives a wing pawn to gain time and build a powerful centre. Development is the compensation.", moves: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "b4", "Bxb4", "c3", "Ba5", "d4"] },
+  { name: "Danish Gambit", tag: "Gambit \u00b7 open lines", idea: "White sacrifices pawns for open diagonals and fast development. Keep the initiative.", moves: ["e4", "e5", "d4", "exd4", "c3", "dxc3", "Bc4", "cxb2", "Bxb2"] },
+  { name: "Smith-Morra Gambit", tag: "Sicilian gambit", idea: "White offers a pawn to develop quickly against the Sicilian and seize open files.", moves: ["e4", "c5", "d4", "cxd4", "c3", "dxc3", "Nxc3"] },
+  { name: "Sicilian Defence", tag: "Defence \u00b7 counterattack", idea: "Black fights for the d4 square asymmetrically and creates active counterplay.", moves: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3"] },
+  { name: "French Defence", tag: "Defence \u00b7 solid", idea: "Black challenges White\u2019s centre with ...d5. Learn the tension between the pawn chains.", moves: ["e4", "e6", "d4", "d5", "Nc3", "Nf6"] },
+  { name: "Caro-Kann Defence", tag: "Defence \u00b7 solid", idea: "Black prepares ...d5 while keeping the light-squared bishop\u2019s diagonal open.", moves: ["e4", "c6", "d4", "d5", "Nc3", "dxe4", "Nxe4"] },
+  { name: "London System", tag: "System \u00b7 positional", idea: "Develop the light-squared bishop outside the pawn chain, then build a reliable setup.", moves: ["d4", "d5", "Nf3", "Nf6", "Bf4", "e6", "e3", "Bd6", "Bg3"] }
 ];
+function buildOpeningLessons(opening) {
+  const game = new Chess();
+  const tips = ['Control the centre', 'Develop a piece', 'Improve your position', 'Prepare king safety', 'Create a useful threat'];
+  return opening.moves.map((san, index) => {
+    const move = game.move(san);
+    return { san: move ? move.san : san, title: tips[index % tips.length], body: opening.idea };
+  });
+}
+
 const VALUES = { p: 100, n: 320, b: 335, r: 500, q: 900, k: 20000 };
 const freshGame = () => new Chess();
 
@@ -53,7 +69,7 @@ function evaluateWhite(game) {
   }, [playerElo, ratedGames, lastResult, ratingReady]);
 
   useEffect(() => {
-    if (tab !== 'Play' || !game.isGameOver() || !ratingReady) return;
+    if (tab !== 'Play' || playMode !== 'computer' || !game.isGameOver() || !ratingReady) return;
     const key = game.history().join(' ');
     if (!key || ratedGameKey.current === key) return;
     ratedGameKey.current = key;
@@ -66,7 +82,7 @@ function evaluateWhite(game) {
     setPlayerElo(nextRating);
     setRatedGames(n => n + 1);
     setLastResult({ result, delta, opponentElo, level, moves: game.history().length, date: new Date().toISOString() });
-  }, [game, tab, level, playerElo, ratingReady]);
+  }, [game, tab, level, playerElo, ratingReady, playMode]);
   let score = 0;
   for (let r = 0; r < 8; r += 1) {
     for (let c = 0; c < 8; c += 1) {
@@ -255,6 +271,8 @@ export default function App() {
   const [targets, setTargets] = useState([]);
   const [history, setHistory] = useState([]);
   const [lessonIndex, setLessonIndex] = useState(0);
+  const [openingIndex, setOpeningIndex] = useState(0);
+  const [playMode, setPlayMode] = useState('computer');
   const [tab, setTab] = useState('Learn');
   const [level, setLevel] = useState('Medium');
   const [engineMode, setEngineMode] = useState('Auto');
@@ -277,6 +295,8 @@ export default function App() {
   const [pgnProgress, setPgnProgress] = useState(0);
   const animationPosition = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const aiBusy = useRef(false);
+  const selectedOpening = OPENINGS[openingIndex] || OPENINGS[0];
+  const LESSONS = useMemo(() => buildOpeningLessons(selectedOpening), [openingIndex]);
   const currentLesson = LESSONS[lessonIndex] || null;
   const boardSize = Math.min(width - 60, 430);
   const board = game.board();
@@ -299,7 +319,7 @@ export default function App() {
   }, [playerElo, ratedGames, lastResult, ratingReady]);
 
   useEffect(() => {
-    if (tab !== 'Play' || !game.isGameOver() || !ratingReady) return;
+    if (tab !== 'Play' || playMode !== 'computer' || !game.isGameOver() || !ratingReady) return;
     const key = game.history().join(' ');
     if (!key || ratedGameKey.current === key) return;
     ratedGameKey.current = key;
@@ -486,7 +506,7 @@ export default function App() {
 
   function selectSquare(square) {
     if (game.isGameOver()) return;
-    if (tab === 'Play' && game.turn() === 'b') return;
+    if (tab === 'Play' && playMode === 'computer' && game.turn() === 'b') return;
     if (selected && targets.includes(square)) {
       const next = new Chess(game.fen());
       try {
@@ -513,7 +533,7 @@ export default function App() {
 
   function undo() {
     if (!history.length) return;
-    const removeCount = tab === 'Play' ? Math.min(2, history.length) : 1;
+    const removeCount = tab === 'Play' && playMode === 'computer' ? Math.min(2, history.length) : 1;
     const remaining = history.slice(0, -removeCount);
     const replay = freshGame();
     remaining.forEach(san => {
@@ -534,7 +554,7 @@ export default function App() {
     setSelected(null);
     setTargets([]);
     setLessonIndex(0);
-    setMessage(tab === 'Play' ? 'New game. You are White; make the first move.' : 'New game. Start with 1. e4 to control the centre.');
+    setMessage(tab === 'Play' ? (playMode === 'pvp' ? 'Offline Pass & Play. White moves first.' : 'New game. You are White; make the first move.') : 'New lesson: ' + selectedOpening.name + '. Start with ' + (LESSONS[0]?.san || 'the first move') + '.');
     setEngineLabel('Ready to play');
     setAnalysis(null);
   }
@@ -560,7 +580,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (tab !== 'Play' || game.turn() !== 'b' || game.isGameOver() || aiBusy.current) return undefined;
+    if (tab !== 'Play' || playMode !== 'computer' || game.turn() !== 'b' || game.isGameOver() || aiBusy.current) return undefined;
     let cancelled = false;
     aiBusy.current = true;
     setAiThinking(true);
@@ -599,7 +619,7 @@ export default function App() {
       cancelled = true;
       aiBusy.current = false;
     };
-  }, [tab, game, level, engineMode]);
+  }, [tab, game, level, engineMode, playMode]);
 
   const movePairs = useMemo(() => {
     const pairs = [];
@@ -640,10 +660,15 @@ export default function App() {
         {tab === 'Play' && (
           <View style={styles.difficultyCard}>
             <View style={styles.difficultyHeading}>
-              <Text style={styles.sectionTitle}>Play the computer</Text>
-              <Text style={styles.onlineTag}>● ENGINE</Text>
+              <Text style={styles.sectionTitle}>Choose game mode</Text>
+              <Text style={styles.onlineTag}>{playMode === 'pvp' ? '● OFFLINE' : '● ENGINE'}</Text>
             </View>
-            <Text style={styles.helper}>Choose how challenging your opponent should be.</Text>
+            <View style={styles.levels}>
+              <Pressable onPress={() => { setPlayMode('computer'); ratedGameKey.current = ''; const next = freshGame(); setGame(next); setHistory([]); setSelected(null); setTargets([]); setEngineLabel('Ready to play'); setMessage('New game against the computer. You are White.'); }} style={[styles.levelButton, playMode === 'computer' && styles.levelButtonActive]}><Text style={[styles.levelText, playMode === 'computer' && styles.levelTextActive]}>vs Computer</Text></Pressable>
+              <Pressable onPress={() => { setPlayMode('pvp'); ratedGameKey.current = ''; const next = freshGame(); setGame(next); setHistory([]); setSelected(null); setTargets([]); setEngineLabel('Offline Pass & Play'); setMessage('Offline Pass & Play. White moves first.'); }} style={[styles.levelButton, playMode === 'pvp' && styles.levelButtonActive]}><Text style={[styles.levelText, playMode === 'pvp' && styles.levelTextActive]}>Pass & Play</Text></Pressable>
+            </View>
+            {playMode === 'pvp' ? <Text style={styles.helper}>Two players, one phone. White and Black take turns on this board. No internet or engine required.</Text> : <>
+            <Text style={styles.helper}>Choose how challenging your computer opponent should be.</Text>
             <View style={styles.levels}>
               {['Easy', 'Medium', 'Hard'].map(item => (
                 <Pressable key={item} onPress={() => setLevel(item)} style={[styles.levelButton, level === item && styles.levelButtonActive]}>
@@ -651,13 +676,25 @@ export default function App() {
                 </Pressable>
               ))}
             </View>
+            </>}
           </View>
         )}
+
+        {tab === 'Learn' && <View style={styles.difficultyCard}>
+          <Text style={styles.sectionTitle}>Opening library · {OPENINGS.length} lessons</Text>
+          <Text style={styles.helper}>Choose an opening to learn its main line, move by move.</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+            {OPENINGS.map((item, index) => <Pressable key={item.name} onPress={() => { setOpeningIndex(index); setLessonIndex(0); setGame(freshGame()); setHistory([]); setSelected(null); setTargets([]); setMessage(item.name + ': ' + item.idea); }} style={[styles.openingChip, openingIndex === index && styles.openingChipActive]}>
+              <Text style={[styles.openingChipTitle, openingIndex === index && styles.openingChipTitleActive]}>{item.name}</Text><Text style={styles.openingChipTag}>{item.tag}</Text>
+            </Pressable>)}
+          </ScrollView>
+          <Text style={styles.helper}>{selectedOpening.idea}</Text>
+        </View>}
 
         <View style={styles.boardCard}>
           <View style={styles.boardHeader}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.boardTitle}>{tab === 'Learn' ? 'The Italian Game' : tab === 'Play' ? 'You vs Computer' : 'Game review'}</Text>
+              <Text style={styles.boardTitle}>{tab === 'Learn' ? selectedOpening.name : tab === 'Play' ? (playMode === 'pvp' ? 'Offline · Pass & Play' : 'You vs Computer') : 'Game review'}</Text>
               <Text style={styles.status}>{aiThinking ? 'Computer is thinking…' : status}</Text>
             </View>
             <View style={[styles.statusDot, game.isGameOver() && styles.statusDotEnd]} />
@@ -667,10 +704,10 @@ export default function App() {
             <View style={styles.playerRow}>
               <View style={styles.avatar}><Text style={styles.avatarText}>♟</Text></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.playerName}>Chess Coach AI</Text>
-                <Text style={styles.playerMeta}>{level} level · Black pieces</Text>
+                <Text style={styles.playerName}>{playMode === 'pvp' ? 'Black · Player 2' : 'Chess Coach AI'}</Text>
+                <Text style={styles.playerMeta}>{playMode === 'pvp' ? 'Black pieces · Player 2' : level + ' level · Black pieces'}</Text>
               </View>
-              <Text style={styles.playerRating}>{level === 'Easy' ? '650 EST.' : level === 'Medium' ? '1000 EST.' : '1450 EST.'}</Text>
+              <Text style={styles.playerRating}>{playMode === 'pvp' ? 'LOCAL' : level === 'Easy' ? '650 EST.' : level === 'Medium' ? '1000 EST.' : '1450 EST.'}</Text>
             </View>
           )}
 
@@ -683,7 +720,7 @@ export default function App() {
               return (
                 <Pressable
                   key={square}
-                  disabled={aiThinking || (tab === 'Play' && game.turn() === 'b')}
+                  disabled={aiThinking || (tab === 'Play' && playMode === 'computer' && game.turn() === 'b')}
                   onPress={() => selectSquare(square)}
                   style={[styles.square, {
                     width: boardSize / 8,
@@ -845,10 +882,10 @@ export default function App() {
             <View style={styles.playerRowBottom}>
               <View style={styles.avatarYou}><Text style={styles.avatarText}>YOU</Text></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.playerName}>You</Text>
-                <Text style={styles.playerMeta}>White pieces · {playerElo} Elo</Text>
+                <Text style={styles.playerName}>{playMode === 'pvp' ? 'White · Player 1' : 'You'}</Text>
+                <Text style={styles.playerMeta}>{playMode === 'pvp' ? 'White pieces · Player 1' : 'White pieces · ' + playerElo + ' Elo'}</Text>
               </View>
-              {aiThinking ? <ActivityIndicator color={COLORS.green} /> : <Text style={styles.turnLabel}>{game.turn() === 'w' && !game.isGameOver() ? 'YOUR TURN' : game.isGameOver() ? 'FINISHED' : 'WAITING'}</Text>}
+              {aiThinking ? <ActivityIndicator color={COLORS.green} /> : <Text style={styles.turnLabel}>{game.isGameOver() ? 'FINISHED' : playMode === 'pvp' ? (game.turn() === 'w' ? 'WHITE TO MOVE' : 'BLACK TO MOVE') : game.turn() === 'w' ? 'YOUR TURN' : 'WAITING'}</Text>}
             </View>
           )}
 
@@ -870,14 +907,14 @@ export default function App() {
           <View style={{ flex: 1 }}>
             <View style={styles.coachTitleRow}>
               <Text style={styles.coachTitle}>Coach's corner</Text>
-              {tab === 'Play' && <Text style={styles.engineState}>{engineLabel}</Text>}
+              {tab === 'Play' && <Text style={styles.engineState}>{playMode === 'pvp' ? 'OFFLINE · NO ENGINE' : engineLabel}</Text>}
             </View>
             <Text style={styles.coachBody}>{message}</Text>
           </View>
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{tab === 'Review' ? 'Move history' : tab === 'Play' ? 'Your match' : 'Your learning path'}</Text>
+          <Text style={styles.sectionTitle}>{tab === 'Review' ? 'Move history' : tab === 'Play' ? 'Your match' : selectedOpening.name + ' · Main line'}</Text>
           <Text style={styles.counter}>{tab === 'Review' ? history.length + ' plies' : tab === 'Play' ? level + ' AI' : progress + '/' + LESSONS.length + ' steps'}</Text>
         </View>
 
@@ -896,7 +933,7 @@ export default function App() {
             <View style={styles.matchStat}><Text style={styles.statLabel}>MOVES PLAYED</Text><Text style={styles.statValue}>{history.length}</Text></View>
             <View style={styles.matchStat}><Text style={styles.statLabel}>CURRENT LEVEL</Text><Text style={styles.statValue}>{level}</Text></View>
             <View style={styles.matchStat}><Text style={styles.statLabel}>ENGINE</Text><Text style={styles.statValueSmall}>{engineLabel}</Text></View>
-            <Text style={styles.helper}>Stockfish is used when its free online service is reachable. If it is unavailable, the built-in chess AI takes over automatically.</Text>
+            <Text style={styles.helper}>{playMode === 'pvp' ? 'Offline local multiplayer. Both players use the same device; engine and internet are not used.' : 'Stockfish is used when available. If the engine is unavailable, the built-in chess AI can take over.'}</Text>
           </View>
         ) : (
           <View style={styles.lessonList}>
@@ -924,7 +961,7 @@ export default function App() {
           </View>
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. Local engine supplied by dawikk-stockfish; online analysis is an optional fallback. Source and licence details are documented in the repository README.</Text>
         </View>
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.6.1</Text>
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.7.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -946,6 +983,11 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: '#2a3b52' },
   tabText: { color: '#8290a8', fontWeight: '800', fontSize: 13 },
   tabTextActive: { color: COLORS.text },
+  openingChip: { backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, minWidth: 132, gap: 4 },
+  openingChipActive: { backgroundColor: '#29452f', borderColor: '#75b95a' },
+  openingChipTitle: { color: COLORS.text, fontSize: 12, fontWeight: '900' },
+  openingChipTitleActive: { color: COLORS.green },
+  openingChipTag: { color: COLORS.muted, fontSize: 9, fontWeight: '700' },
   difficultyCard: { width: '100%', backgroundColor: COLORS.panel, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: COLORS.line, gap: 8 },
   difficultyHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '900' },

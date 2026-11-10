@@ -48,3 +48,10 @@ Stockfish is GPLv3-licensed software. This app calls a public analysis service a
 ## Game review update (v0.6.1)
 
 The local engine now follows the UCI startup handshake (`uci` / `uciok`, `isready` / `readyok`) before analysing positions. The PGN review includes a White-vs-Black move-quality table and separate good-or-better totals. Move categories are estimates based on evaluation loss at the selected engine depth; they are not Chess.com's proprietary accuracy calculation.
+
+
+## Opening library and offline Pass & Play (v0.7.0)
+
+Learning mode includes 12 move-by-move opening lessons: Italian Game, Ruy Lopez, Scotch Game, Queen's Gambit, King's Gambit, Evans Gambit, Danish Gambit, Smith-Morra Gambit, Sicilian Defence, French Defence, Caro-Kann Defence, and London System. Each lesson includes a main line and strategic explanation.
+
+Play mode includes **Pass & Play (Offline)** for two people sharing one device. Both sides make moves on the same board using `chess.js` legal move validation; the computer engine is not called in this mode. Standard check, checkmate, stalemate, and draw detection are provided by `chess.js`.
