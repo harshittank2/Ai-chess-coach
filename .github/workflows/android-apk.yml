@@ -1,4 +1,4 @@
-name: Build Chess Coach AI APK
+name: Build Royal Gambit APK
 
 on:
   workflow_dispatch:
@@ -68,7 +68,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: Chess-Coach-AI-APK
+          name: Royal-Gambit-APK
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14

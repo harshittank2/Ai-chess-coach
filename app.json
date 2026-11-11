@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "Chess Coach AI",
-    "slug": "chess-coach-ai",
-    "version": "0.8.1",
+    "name": "Royal Gambit",
+    "slug": "royal-gambit",
+    "version": "0.8.2",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "splash": {
-      "backgroundColor": "#080d18"
+      "backgroundColor": "#082719"
     },
     "android": {
       "package": "com.harshit.chesscoachai",
-      "versionCode": 12,
+      "versionCode": 13,
       "adaptiveIcon": {
-        "backgroundColor": "#080d18"
+        "backgroundColor": "#082719"
       }
     }
   }

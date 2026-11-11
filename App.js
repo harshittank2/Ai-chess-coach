@@ -713,7 +713,7 @@ export default function App() {
         {!(fullScreen && tab === 'Play') && <View style={styles.header}>
           <View style={styles.brandBlock}>
             <Text style={styles.eyebrow}>THINK. PLAY. IMPROVE.</Text>
-            <Text style={styles.brand}>Chess Coach <Text style={styles.brandAccent}>AI</Text></Text>
+            <Text style={styles.brand}>Royal <Text style={styles.brandAccent}>Gambit</Text></Text>
             <Text style={styles.tagline}>Your personal chess training room</Text>
           </View>
           <View style={styles.levelBadge}><Text style={styles.levelBadgeText}>♟ BEGINNER</Text></View>
@@ -1055,7 +1055,7 @@ export default function App() {
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. Local engine supplied by dawikk-stockfish; online analysis is an optional fallback. Source and licence details are documented in the repository README.</Text>
         </View>
         </>}
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.8.1</Text>
+        <Text style={styles.footer}>ROYAL GAMBIT  ·  BUILD 0.8.2</Text>
       </ScrollView>
     </SafeAreaView>
   );
