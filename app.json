@@ -12,8 +12,10 @@
       "package": "com.harshit.chesscoachai",
       "versionCode": 13,
       "adaptiveIcon": {
-        "backgroundColor": "#082719"
+        "backgroundColor": "#082719",
+        "foregroundImage": "assets/royal-gambit-icon.png"
       }
-    }
+    },
+    "icon": "assets/royal-gambit-icon.png"
   }
 }

@@ -1,5 +1,7 @@
 # Royal Gambit ♛
 
+<p align="center"><img src="assets/royal-gambit-icon.png" width="220" alt="Royal Gambit king logo"></p>
+
 A mobile-first chess training app built with **Expo, React Native, and chess.js**. Play against configurable opponents, practise openings, review PGN games with Stockfish, or play a friend offline on the same device.
 
 > **Status:** Active development · Android APK builds are produced with GitHub Actions.
