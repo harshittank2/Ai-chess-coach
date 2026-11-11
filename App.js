@@ -244,7 +244,8 @@ export default function App() {
   const [game, setGame] = useState(freshGame);
   const boardSnapshots = useRef({ Learn: { game: freshGame(), history: [] }, Play: { game: freshGame(), history: [] }, Review: { game: freshGame(), history: [] } });
   const [selected, setSelected] = useState(null);
-  const [targets, setTargets] = useState([]);
+  const [targets, setTargets] = useState([])
+  const [pendingPremove, setPendingPremove] = useState(null);
   const [history, setHistory] = useState([]);
   const [lessonIndex, setLessonIndex] = useState(0);
   const [openingIndex, setOpeningIndex] = useState(0);
@@ -299,6 +300,7 @@ export default function App() {
     setHistory([...destination.history]);
     setSelected(null);
     setTargets([]);
+    setPendingPremove(null);
     setAnimatedPiece(null);
     setTab(nextTab);
     setMessage(nextTab === 'Learn' ? 'Opening lesson board' : nextTab === 'Play' ? 'Your play board' : 'Game review board');
@@ -541,27 +543,45 @@ export default function App() {
 
   function selectSquare(square) {
     if (game.isGameOver() || timeoutSide) return;
-    if (tab === 'Play' && playMode === 'computer' && game.turn() === 'b') return;
+    const queueingPremove = tab === 'Play' && playMode === 'computer' && game.turn() === 'b';
+    if (queueingPremove) {
+      if (selected && targets.includes(square)) {
+        setPendingPremove({ from: selected, to: square, promotion: 'q' });
+        setSelected(null); setTargets([]);
+        setMessage('Premove queued: ' + selected + ' → ' + square + '. It will play automatically if legal after the computer moves.');
+        return;
+      }
+      const piece = game.get(square);
+      if (piece && piece.color === 'w') {
+        const fields = game.fen().split(' '); fields[1] = 'w';
+        const preview = new Chess(fields.join(' '));
+        const options = preview.moves({ square, verbose: true }).map(move => move.to);
+        setSelected(square); setTargets(options);
+        setMessage(options.length ? 'Choose where your piece should move after the computer replies.' : 'No premove destinations available for that piece in this position.');
+      } else {
+        setSelected(null); setTargets([]); setPendingPremove(null);
+        setMessage('Select one of your White pieces to queue a premove.');
+      }
+      return;
+    }
+    if (tab === 'Play' && playMode === 'computer' && game.turn() === 'w' && pendingPremove) setPendingPremove(null);
     if (selected && targets.includes(square)) {
       const next = new Chess(game.fen());
       try {
         const move = next.move({ from: selected, to: square, promotion: 'q' });
         if (move) {
+          setPendingPremove(null);
           recordPosition(next, move, 'Nice move: ' + move.san + '. ' + (next.isCheck() ? 'Check!' : 'Keep developing and watch your opponent threats.'));
           return;
         }
-      } catch (error) {
-        // The board stays unchanged if a move is rejected.
-      }
+      } catch (error) {}
     }
     const piece = game.get(square);
     if (piece && piece.color === game.turn()) {
-      setSelected(square);
-      setTargets(legalTargets(square));
+      setSelected(square); setTargets(legalTargets(square));
       setMessage((piece.color === 'w' ? 'White ' : 'Black ') + piece.type.toUpperCase() + ' selected. Pick a highlighted square.');
     } else {
-      setSelected(null);
-      setTargets([]);
+      setSelected(null); setTargets([]);
       setMessage('That square is not a legal destination. Select one of your pieces.');
     }
   }
@@ -586,6 +606,7 @@ export default function App() {
     setHistory(replay.history());
     setSelected(null);
     setTargets([]);
+    setPendingPremove(null);
     setAnimatedPiece(null);
     setMessage('Last move' + (removeCount === 2 ? ' pair' : '') + ' undone.');
   }
@@ -613,6 +634,7 @@ export default function App() {
     setHistory([]);
     setSelected(null);
     setTargets([]);
+    setPendingPremove(null);
     setLessonIndex(0);
     setMessage(tab === 'Play' ? (playMode === 'pvp' ? 'Offline Pass & Play. White moves first.' : 'New game. You are White; make the first move.') : 'New lesson: ' + selectedOpening.name + '. Start with ' + (LESSONS[0]?.san || 'the first move') + '.');
     setEngineLabel('Ready to play');
@@ -690,6 +712,21 @@ export default function App() {
       aiBusy.current = false;
     };
   }, [tab, game, level, engineMode, playMode, selectedBotId, timeoutSide]);
+
+  useEffect(() => {
+    if (!pendingPremove || tab !== 'Play' || playMode !== 'computer' || game.turn() !== 'w' || aiThinking || game.isGameOver() || timeoutSide) return;
+    const queued = pendingPremove;
+    const next = new Chess(game.fen());
+    try {
+      const played = next.move({ from: queued.from, to: queued.to, promotion: queued.promotion || 'q' });
+      setPendingPremove(null); setSelected(null); setTargets([]);
+      if (played) recordPosition(next, played, 'Premove played: ' + played.san + '.');
+      else setMessage('Premove cancelled: that move is no longer legal.');
+    } catch (error) {
+      setPendingPremove(null); setSelected(null); setTargets([]);
+      setMessage('Premove cancelled: the computer changed the position.');
+    }
+  }, [pendingPremove, tab, playMode, game, aiThinking, timeoutSide]);
 
   const movePairs = useMemo(() => {
     const pairs = [];
@@ -786,6 +823,7 @@ export default function App() {
             <View style={{ flex: 1 }}>
               <Text style={styles.boardTitle}>{tab === 'Learn' ? selectedOpening.name : tab === 'Play' ? (playMode === 'pvp' ? 'Offline · Pass & Play' : 'You vs Computer') : 'Game review'}</Text>
               <Text style={styles.status}>{aiThinking ? 'Computer is thinking…' : status}</Text>
+              {pendingPremove && <Text style={styles.helper}>PREMOVE QUEUED · {pendingPremove.from} → {pendingPremove.to}</Text>}
             </View>
             {tab === 'Play' && <Pressable onPress={() => setFullScreen(value => !value)} style={styles.fullscreenButton}><Text style={styles.fullscreenButtonText}>{fullScreen ? '↙ Exit full screen' : '⛶ Full screen'}</Text></Pressable>}
             <View style={[styles.statusDot, (game.isGameOver() || timeoutSide) && styles.statusDotEnd]} />
@@ -811,7 +849,7 @@ export default function App() {
               return (
                 <Pressable
                   key={square}
-                  disabled={aiThinking || (tab === 'Play' && playMode === 'computer' && game.turn() === 'b')}
+                  disabled={false}
                   onPress={() => selectSquare(square)}
                   style={[styles.square, {
                     width: boardSize / 8,
