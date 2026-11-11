@@ -553,13 +553,29 @@ export default function App() {
       }
       const piece = game.get(square);
       if (piece && piece.color === 'w') {
-        const fields = game.fen().split(' '); fields[1] = 'w';
-        const preview = new Chess(fields.join(' '));
-        const options = preview.moves({ square, verbose: true }).map(move => move.to);
-        setSelected(square); setTargets(options);
-        setMessage(options.length ? 'Choose where your piece should move after the computer replies.' : 'No premove destinations available for that piece in this position.');
+        // Build a temporary White-to-move position only to preview destinations.
+        // Clear the en-passant target: it belongs to the side that just moved and
+        // becomes invalid when we flip the FEN turn field for a premove preview.
+        const fields = game.fen().split(' ');
+        fields[1] = 'w';
+        fields[3] = '-';
+        let options = [];
+        try {
+          const preview = new Chess(fields.join(' '));
+          options = preview.moves({ square, verbose: true }).map(move => move.to);
+        } catch (error) {
+          // A premove is only a prediction; if the current position cannot be
+          // safely previewed, still allow the user to choose a destination.
+          options = [];
+        }
+        setSelected(square);
+        setTargets(options);
+        setMessage(options.length
+          ? 'Choose where your piece should move after the computer replies.'
+          : 'No safe premove destinations can be previewed here. Select another piece or wait for the computer move.');
       } else {
-        setSelected(null); setTargets([]); setPendingPremove(null);
+        setSelected(null);
+        setTargets([]);
         setMessage('Select one of your White pieces to queue a premove.');
       }
       return;
