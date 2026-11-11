@@ -60,3 +60,10 @@ Play mode includes **Pass & Play (Offline)** for two people sharing one device. 
 ## Shared board and undo fix (v0.7.1)
 
 Learn, Play, and Review are views over the same in-memory chess game. Switching tabs only changes the view and clears square selection; it does not start a new game. Undo reconstructs the position from the game’s original FEN when available (including imported PGNs), then replays all remaining moves. If reconstruction fails, the current position is left unchanged rather than resetting the board.
+
+
+## Functional redesign and bot roster (v0.8.0)
+
+Play now offers a bot roster with Martin (250 target Elo), Rookie (500), Club Player (1000), Tactician (1600), and Magnus-style (2800 target). Ratings are clearly described as target difficulty estimates, not official or measured playing strength. Martin uses deliberately casual random legal moves; other profiles use the available Stockfish engine with increasing search settings. The Magnus-style profile is the strongest available engine preset and does not claim to replicate Magnus Carlsen.
+
+The refreshed visual theme uses a deep green chess-club palette, selectable bot cards, stronger selection states, and clearer engine status. Existing independent Learn, Play, and Review boards, opening lessons, PGN import, move classifications, undo, and offline Pass & Play are retained.

@@ -10,11 +10,18 @@ import * as FileSystem from 'expo-file-system';
 import Stockfish from 'dawikk-stockfish';
 
 const COLORS = {
-  bg: '#080d18', panel: '#111a2b', panel2: '#172338', line: '#26364d',
-  text: '#f4f7fb', muted: '#91a0b8', green: '#a8ed78',
-  greenDark: '#1d3b2b', light: '#eee9dc', dark: '#77927d',
+  bg: '#101714', panel: '#19231e', panel2: '#222f28', line: '#35483c',
+  text: '#f3f7f2', muted: '#9aaca0', green: '#a8ed78',
+  greenDark: '#24452f', light: '#e8eee6', dark: '#78917e',
   gold: '#f2c66d', red: '#ff7777'
 };
+const BOT_PROFILES = [
+  { id: 'martin', name: 'Martin', elo: 250, level: 'Easy', tag: 'Beginner', style: 'Casual moves · forgiving', mode: 'casual' },
+  { id: 'rookie', name: 'Rookie', elo: 500, level: 'Easy', tag: 'Learning', style: 'Simple plans · low pressure', mode: 'easy' },
+  { id: 'club', name: 'Club Player', elo: 1000, level: 'Medium', tag: 'Club', style: 'Balanced development', mode: 'medium' },
+  { id: 'tactician', name: 'Tactician', elo: 1600, level: 'Hard', tag: 'Advanced', style: 'Sharper tactics · deeper search', mode: 'hard' },
+  { id: 'magnus', name: 'Magnus-style', elo: 2800, level: 'Hard', tag: 'Elite', style: 'Strongest available engine mode', mode: 'elite' }
+];
 const FILES = 'abcdefgh';
 const PIECES = {
   wK: '♔', wQ: '♕', wR: '♖', wB: '♗', wN: '♘', wP: '♙',
@@ -244,6 +251,8 @@ export default function App() {
   const [playMode, setPlayMode] = useState('computer');
   const [tab, setTab] = useState('Learn');
   const [level, setLevel] = useState('Medium');
+  const [selectedBotId, setSelectedBotId] = useState('club');
+  const selectedBot = BOT_PROFILES.find(bot => bot.id === selectedBotId) || BOT_PROFILES[2];
   const [engineMode, setEngineMode] = useState('Auto');
   const [message, setMessage] = useState('Choose a piece, then tap a highlighted square.');
   const [aiThinking, setAiThinking] = useState(false);
@@ -313,7 +322,7 @@ export default function App() {
     const key = game.history().join(' ');
     if (!key || ratedGameKey.current === key) return;
     ratedGameKey.current = key;
-    const opponentElo = level === 'Easy' ? 650 : level === 'Medium' ? 1000 : 1450;
+    const opponentElo = selectedBot.elo;
     const score = game.isDraw() ? 0.5 : game.turn() === 'b' ? 1 : 0;
     const expected = 1 / (1 + Math.pow(10, (opponentElo - playerElo) / 400));
     const delta = Math.round(32 * (score - expected));
@@ -321,8 +330,8 @@ export default function App() {
     const result = score === 0.5 ? 'Draw' : score === 1 ? 'Win' : 'Loss';
     setPlayerElo(nextRating);
     setRatedGames(n => n + 1);
-    setLastResult({ result, delta, opponentElo, level, moves: game.history().length, date: new Date().toISOString() });
-  }, [game, tab, level, playerElo, ratingReady]);
+    setLastResult({ result, delta, opponentElo, level, botName: selectedBot.name, moves: game.history().length, date: new Date().toISOString() });
+  }, [game, tab, level, selectedBotId, selectedBot, playerElo, ratingReady]);
 
   const status = game.isCheckmate()
     ? 'Checkmate · ' + (game.turn() === 'w' ? 'Black' : 'White') + ' wins'
@@ -545,6 +554,20 @@ export default function App() {
     setMessage('Last move' + (removeCount === 2 ? ' pair' : '') + ' undone.');
   }
 
+  function selectBot(bot) {
+    setSelectedBotId(bot.id);
+    setLevel(bot.level);
+    ratedGameKey.current = '';
+    const next = freshGame();
+    setGame(next);
+    setHistory([]);
+    setSelected(null);
+    setTargets([]);
+    setAnalysis(null);
+    setEngineLabel(bot.mode === 'casual' ? 'Martin · casual mode' : bot.id === 'magnus' ? 'Elite engine mode · target 2800' : bot.level + ' engine mode');
+    setMessage('New game vs ' + bot.name + ' · target ' + bot.elo + ' Elo. White moves first.');
+  }
+
   function restart() {
     ratedGameKey.current = '';
     const next = freshGame();
@@ -587,8 +610,18 @@ export default function App() {
     (async () => {
       let move = null;
       try {
-        move = await getStockfishMove(game.fen(), level, engineMode);
-        if (!cancelled) setEngineLabel(engineMode === 'Online only' ? 'Online Stockfish' : engineMode === 'Local only' ? 'Local Stockfish' : 'Local-first Stockfish');
+        if (selectedBotId === 'martin') {
+          const casualGame = new Chess(game.fen());
+          const legal = casualGame.moves({ verbose: true });
+          if (legal.length) {
+            const pick = legal[Math.floor(Math.random() * legal.length)];
+            move = { from: pick.from, to: pick.to, promotion: pick.promotion || 'q' };
+          }
+          if (!cancelled) setEngineLabel('Martin · casual moves');
+        } else {
+          move = await getStockfishMove(game.fen(), level, engineMode);
+          if (!cancelled) setEngineLabel(selectedBotId === 'magnus' ? 'Elite engine mode · target 2800' : engineMode === 'Online only' ? 'Online Stockfish' : engineMode === 'Local only' ? 'Local Stockfish' : 'Local-first Stockfish');
+        }
       } catch (error) {
         if (engineMode === 'Local only') {
           move = null;
@@ -618,7 +651,7 @@ export default function App() {
       cancelled = true;
       aiBusy.current = false;
     };
-  }, [tab, game, level, engineMode, playMode]);
+  }, [tab, game, level, engineMode, playMode, selectedBotId]);
 
   const movePairs = useMemo(() => {
     const pairs = [];
@@ -668,14 +701,20 @@ export default function App() {
               <Pressable onPress={() => { setPlayMode('pvp'); ratedGameKey.current = ''; const next = freshGame(); setGame(next); setHistory([]); setSelected(null); setTargets([]); setEngineLabel('Offline Pass & Play'); setMessage('Offline Pass & Play. White moves first.'); }} style={[styles.levelButton, playMode === 'pvp' && styles.levelButtonActive]}><Text style={[styles.levelText, playMode === 'pvp' && styles.levelTextActive]}>Pass & Play</Text></Pressable>
             </View>
             {playMode === 'pvp' ? <Text style={styles.helper}>Two players, one phone. White and Black take turns on this board. No internet or engine required.</Text> : <>
-            <Text style={styles.helper}>Choose how challenging your computer opponent should be.</Text>
-            <View style={styles.levels}>
-              {['Easy', 'Medium', 'Hard'].map(item => (
-                <Pressable key={item} onPress={() => setLevel(item)} style={[styles.levelButton, level === item && styles.levelButtonActive]}>
-                  <Text style={[styles.levelText, level === item && styles.levelTextActive]}>{item}</Text>
+            <Text style={styles.helper}>Choose a personality. Elo is a target difficulty estimate; it is not a certified rating or an exact replica of a real player.</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.botRail}>
+              {BOT_PROFILES.map(bot => (
+                <Pressable key={bot.id} onPress={() => selectBot(bot)} style={[styles.botCard, selectedBotId === bot.id && styles.botCardActive]}>
+                  <View style={[styles.botAvatar, selectedBotId === bot.id && styles.botAvatarActive]}><Text style={styles.botAvatarText}>{bot.id === 'magnus' ? '♛' : bot.id === 'martin' ? '♟' : bot.id === 'tactician' ? '⚡' : '♞'}</Text></View>
+                  <Text style={styles.botName}>{bot.name}</Text>
+                  <Text style={[styles.botElo, selectedBotId === bot.id && styles.botEloActive]}>{bot.elo} Elo</Text>
+                  <Text style={styles.botTag}>{bot.tag.toUpperCase()}</Text>
+                  <Text style={styles.botStyle}>{bot.style}</Text>
+                  {selectedBotId === bot.id && <Text style={styles.botSelected}>✓ SELECTED</Text>}
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>
+            <Text style={styles.helper}>Martin uses intentionally casual legal moves. Other bots use the available Stockfish engine at increasing search settings. Magnus-style is the strongest available engine preset, not a simulation of Magnus Carlsen.</Text>
             </>}
           </View>
         )}
@@ -704,10 +743,10 @@ export default function App() {
             <View style={styles.playerRow}>
               <View style={styles.avatar}><Text style={styles.avatarText}>♟</Text></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.playerName}>{playMode === 'pvp' ? 'Black · Player 2' : 'Chess Coach AI'}</Text>
-                <Text style={styles.playerMeta}>{playMode === 'pvp' ? 'Black pieces · Player 2' : level + ' level · Black pieces'}</Text>
+                <Text style={styles.playerName}>{playMode === 'pvp' ? 'Black · Player 2' : selectedBot.name}</Text>
+                <Text style={styles.playerMeta}>{playMode === 'pvp' ? 'Black pieces · Player 2' : selectedBot.tag + ' · Black pieces'}</Text>
               </View>
-              <Text style={styles.playerRating}>{playMode === 'pvp' ? 'LOCAL' : level === 'Easy' ? '650 EST.' : level === 'Medium' ? '1000 EST.' : '1450 EST.'}</Text>
+              <Text style={styles.playerRating}>{playMode === 'pvp' ? 'LOCAL' : selectedBot.elo + ' ELO'}</Text>
             </View>
           )}
 
@@ -861,7 +900,7 @@ export default function App() {
                     <Text style={styles.ratingChangeLabel}>Rating change</Text>
                     <Text style={[styles.ratingChange, lastResult.delta >= 0 ? { color: COLORS.green } : { color: COLORS.red }]}>{lastResult.delta > 0 ? '+' : ''}{lastResult.delta} Elo</Text>
                   </View>
-                  <Text style={styles.helper}>Against {lastResult.level} AI · {lastResult.moves} half-moves · opponent estimate {lastResult.opponentElo}</Text>
+                  <Text style={styles.helper}>Against {lastResult.botName || lastResult.level + ' AI'} · {lastResult.moves} half-moves · opponent target {lastResult.opponentElo} Elo</Text>
                 </View>
               )}
               <Pressable onPress={analyzeCurrentPosition} disabled={analyzing} style={styles.primaryButton}>
@@ -961,7 +1000,7 @@ export default function App() {
           </View>
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. Local engine supplied by dawikk-stockfish; online analysis is an optional fallback. Source and licence details are documented in the repository README.</Text>
         </View>
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.7.2</Text>
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.8.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -988,6 +1027,18 @@ const styles = StyleSheet.create({
   openingChipTitle: { color: COLORS.text, fontSize: 12, fontWeight: '900' },
   openingChipTitleActive: { color: COLORS.green },
   openingChipTag: { color: COLORS.muted, fontSize: 9, fontWeight: '700' },
+  botRail: { gap: 10, paddingVertical: 8, paddingRight: 4 },
+  botCard: { width: 146, backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, borderRadius: 16, padding: 12, gap: 5 },
+  botCardActive: { borderColor: COLORS.green, backgroundColor: '#263a2b' },
+  botAvatar: { width: 40, height: 40, borderRadius: 14, backgroundColor: '#34483a', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  botAvatarActive: { backgroundColor: '#547a43' },
+  botAvatarText: { color: COLORS.text, fontSize: 24, fontWeight: '900' },
+  botName: { color: COLORS.text, fontSize: 13, fontWeight: '900' },
+  botElo: { color: COLORS.muted, fontSize: 16, fontWeight: '900' },
+  botEloActive: { color: COLORS.green },
+  botTag: { color: COLORS.gold, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  botStyle: { color: COLORS.muted, fontSize: 10, lineHeight: 14, minHeight: 30 },
+  botSelected: { color: COLORS.green, fontSize: 9, fontWeight: '900', marginTop: 2 },
   difficultyCard: { width: '100%', backgroundColor: COLORS.panel, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: COLORS.line, gap: 8 },
   difficultyHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '900' },
