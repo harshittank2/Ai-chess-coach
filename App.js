@@ -698,7 +698,7 @@ export default function App() {
           if (played) {
             setSelected(null);
             setTargets([]);
-            animatePosition(next, played, 'Computer played ' + played.san + '. Find your next plan.');
+            animatePosition(next, played, 'Computer played ' + played.san + '. Find your next plan.', () => { setSelected(null); setTargets([]); });
           }
         } catch (error) {
           setMessage('The engine returned an invalid move. Please try again.');
@@ -846,6 +846,7 @@ export default function App() {
               const light = (r + c) % 2 === 0;
               const isTarget = targets.includes(square);
               const isSelected = selected === square;
+              const isPremoveSquare = !!pendingPremove && (pendingPremove.from === square || pendingPremove.to === square);
               return (
                 <Pressable
                   key={square}
@@ -854,7 +855,7 @@ export default function App() {
                   style={[styles.square, {
                     width: boardSize / 8,
                     height: boardSize / 8,
-                    backgroundColor: isSelected ? '#d6c45e' : light ? '#e7c99b' : '#93633e'
+                    backgroundColor: isSelected ? '#d6c45e' : isPremoveSquare ? '#b7a05b' : light ? '#e7c99b' : '#93633e'
                   }]}
                 >
                   {isTarget && <View style={[styles.target, piece && styles.targetCapture]} />}
