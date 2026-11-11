@@ -249,6 +249,12 @@ export default function App() {
   const [lessonIndex, setLessonIndex] = useState(0);
   const [openingIndex, setOpeningIndex] = useState(0);
   const [playMode, setPlayMode] = useState('computer');
+  const [timeMinutes, setTimeMinutes] = useState(10);
+  const [customMinutes, setCustomMinutes] = useState('10');
+  const [clock, setClock] = useState({ w: 600, b: 600 });
+  const [clockStarted, setClockStarted] = useState(false);
+  const [timeoutSide, setTimeoutSide] = useState(null);
+  const [fullScreen, setFullScreen] = useState(false);
   const [tab, setTab] = useState('Learn');
   const [level, setLevel] = useState('Medium');
   const [selectedBotId, setSelectedBotId] = useState('club');
@@ -276,7 +282,7 @@ export default function App() {
   const selectedOpening = OPENINGS[openingIndex] || OPENINGS[0];
   const LESSONS = useMemo(() => buildOpeningLessons(selectedOpening), [openingIndex]);
   const currentLesson = LESSONS[lessonIndex] || null;
-  const boardSize = Math.min(width - 60, 430);
+  const boardSize = fullScreen && tab === 'Play' ? Math.max(240, Math.min(width - 20, 620)) : Math.min(width - 60, 430);
   const board = game.board();
 
   // Persist each tab's board snapshot independently; these hooks must remain
@@ -333,7 +339,36 @@ export default function App() {
     setLastResult({ result, delta, opponentElo, level, botName: selectedBot.name, moves: game.history().length, date: new Date().toISOString() });
   }, [game, tab, level, selectedBotId, selectedBot, playerElo, ratingReady]);
 
-  const status = game.isCheckmate()
+  useEffect(() => {
+    if (tab !== 'Play' || !clockStarted || game.isGameOver() || timeoutSide) return undefined;
+    const timer = setInterval(() => {
+      const side = game.turn();
+      setClock(previous => {
+        const nextValue = Math.max(0, previous[side] - 1);
+        return { ...previous, [side]: nextValue };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [tab, clockStarted, game, timeoutSide]);
+
+  useEffect(() => {
+    if (tab === 'Play' && clockStarted && !game.isGameOver() && clock[game.turn()] <= 0 && !timeoutSide) {
+      setTimeoutSide(game.turn());
+    }
+  }, [tab, clock, clockStarted, game, timeoutSide]);
+
+  const formatClock = seconds => {
+    const safe = Math.max(0, seconds);
+    return Math.floor(safe / 60).toString().padStart(2, '0') + ':' + (safe % 60).toString().padStart(2, '0');
+  };
+  const resetClock = (minutes = timeMinutes, start = false) => {
+    const total = Math.max(1, Math.min(180, Number(minutes) || 10)) * 60;
+    setClock({ w: total, b: total });
+    setTimeoutSide(null);
+    setClockStarted(start);
+  };
+
+  const status = timeoutSide ? (timeoutSide === 'w' ? 'White' : 'Black') + ' ran out of time · ' + (timeoutSide === 'w' ? 'Black' : 'White') + ' wins' : game.isCheckmate()
     ? 'Checkmate · ' + (game.turn() === 'w' ? 'Black' : 'White') + ' wins'
     : game.isDraw()
       ? 'Draw game'
@@ -490,6 +525,7 @@ export default function App() {
   }
 
   function recordPosition(next, move, note) {
+    if (tab === 'Play' && !clockStarted) setClockStarted(true);
     setSelected(null);
     setTargets([]);
     animatePosition(next, move, note, () => {
@@ -504,7 +540,7 @@ export default function App() {
   }
 
   function selectSquare(square) {
-    if (game.isGameOver()) return;
+    if (game.isGameOver() || timeoutSide) return;
     if (tab === 'Play' && playMode === 'computer' && game.turn() === 'b') return;
     if (selected && targets.includes(square)) {
       const next = new Chess(game.fen());
@@ -555,6 +591,7 @@ export default function App() {
   }
 
   function selectBot(bot) {
+    resetClock(timeMinutes, false);
     setSelectedBotId(bot.id);
     setLevel(bot.level);
     ratedGameKey.current = '';
@@ -570,6 +607,7 @@ export default function App() {
 
   function restart() {
     ratedGameKey.current = '';
+    if (tab === 'Play') resetClock(timeMinutes, false);
     const next = freshGame();
     setGame(next);
     setHistory([]);
@@ -651,7 +689,7 @@ export default function App() {
       cancelled = true;
       aiBusy.current = false;
     };
-  }, [tab, game, level, engineMode, playMode, selectedBotId]);
+  }, [tab, game, level, engineMode, playMode, selectedBotId, timeoutSide]);
 
   const movePairs = useMemo(() => {
     const pairs = [];
@@ -670,35 +708,44 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
-      <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+      <StatusBar hidden={fullScreen && tab === 'Play'} barStyle="light-content" backgroundColor={COLORS.bg} />
+      <ScrollView contentContainerStyle={[styles.page, fullScreen && tab === 'Play' && styles.pageFullscreen]} showsVerticalScrollIndicator={false}>
+        {!(fullScreen && tab === 'Play') && <View style={styles.header}>
           <View style={styles.brandBlock}>
             <Text style={styles.eyebrow}>THINK. PLAY. IMPROVE.</Text>
             <Text style={styles.brand}>Chess Coach <Text style={styles.brandAccent}>AI</Text></Text>
             <Text style={styles.tagline}>Your personal chess training room</Text>
           </View>
           <View style={styles.levelBadge}><Text style={styles.levelBadgeText}>♟ BEGINNER</Text></View>
-        </View>
+        </View>}
 
-        <View style={styles.tabs}>
+        {!(fullScreen && tab === 'Play') && <View style={styles.tabs}>
           {/* These are views over one shared game state; changing tabs must never start a new game. */}
           {['Learn', 'Play', 'Review'].map(item => (
             <Pressable key={item} onPress={() => switchBoardTab(item)} style={[styles.tab, tab === item && styles.tabActive]}>
               <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>{item}</Text>
             </Pressable>
           ))}
-        </View>
+        </View>}
 
-        {tab === 'Play' && (
+        {tab === 'Play' && !fullScreen && (
           <View style={styles.difficultyCard}>
             <View style={styles.difficultyHeading}>
               <Text style={styles.sectionTitle}>Choose game mode</Text>
               <Text style={styles.onlineTag}>{playMode === 'pvp' ? '● OFFLINE' : '● ENGINE'}</Text>
             </View>
             <View style={styles.levels}>
-              <Pressable onPress={() => { setPlayMode('computer'); ratedGameKey.current = ''; const next = freshGame(); setGame(next); setHistory([]); setSelected(null); setTargets([]); setEngineLabel('Ready to play'); setMessage('New game against the computer. You are White.'); }} style={[styles.levelButton, playMode === 'computer' && styles.levelButtonActive]}><Text style={[styles.levelText, playMode === 'computer' && styles.levelTextActive]}>vs Computer</Text></Pressable>
-              <Pressable onPress={() => { setPlayMode('pvp'); ratedGameKey.current = ''; const next = freshGame(); setGame(next); setHistory([]); setSelected(null); setTargets([]); setEngineLabel('Offline Pass & Play'); setMessage('Offline Pass & Play. White moves first.'); }} style={[styles.levelButton, playMode === 'pvp' && styles.levelButtonActive]}><Text style={[styles.levelText, playMode === 'pvp' && styles.levelTextActive]}>Pass & Play</Text></Pressable>
+              <Pressable onPress={() => { setPlayMode('computer'); resetClock(timeMinutes, false); ratedGameKey.current = ''; const next = freshGame(); setGame(next); setHistory([]); setSelected(null); setTargets([]); setEngineLabel('Ready to play'); setMessage('New game against the computer. You are White.'); }} style={[styles.levelButton, playMode === 'computer' && styles.levelButtonActive]}><Text style={[styles.levelText, playMode === 'computer' && styles.levelTextActive]}>vs Computer</Text></Pressable>
+              <Pressable onPress={() => { setPlayMode('pvp'); resetClock(timeMinutes, false); ratedGameKey.current = ''; const next = freshGame(); setGame(next); setHistory([]); setSelected(null); setTargets([]); setEngineLabel('Offline Pass & Play'); setMessage('Offline Pass & Play. White moves first.'); }} style={[styles.levelButton, playMode === 'pvp' && styles.levelButtonActive]}><Text style={[styles.levelText, playMode === 'pvp' && styles.levelTextActive]}>Pass & Play</Text></Pressable>
+            </View>
+            <Text style={styles.helper}>Time control</Text>
+            <View style={styles.timeControls}>
+              {[1, 3, 5, 10, 15, 30].map(minutes => <Pressable key={minutes} onPress={() => { setTimeMinutes(minutes); setCustomMinutes(String(minutes)); resetClock(minutes, false); }} style={[styles.timeChip, timeMinutes === minutes && styles.timeChipActive]}><Text style={[styles.timeChipText, timeMinutes === minutes && styles.timeChipTextActive]}>{minutes} min</Text></Pressable>)}
+            </View>
+            <View style={styles.clockSetupRow}>
+              <TextInput value={customMinutes} onChangeText={value => setCustomMinutes(value.replace(/[^0-9]/g, '').slice(0, 3))} keyboardType="number-pad" placeholder="Custom min" placeholderTextColor="#78877d" style={styles.customTimeInput} />
+              <Pressable onPress={() => { const minutes = Math.max(1, Math.min(180, Number(customMinutes) || 10)); setTimeMinutes(minutes); setCustomMinutes(String(minutes)); resetClock(minutes, false); }} style={styles.timeApply}><Text style={styles.timeApplyText}>Set custom</Text></Pressable>
+              <Pressable onPress={() => { restart(); resetClock(timeMinutes, true); }} style={styles.timeApply}><Text style={styles.timeApplyText}>Start game</Text></Pressable>
             </View>
             {playMode === 'pvp' ? <Text style={styles.helper}>Two players, one phone. White and Black take turns on this board. No internet or engine required.</Text> : <>
             <Text style={styles.helper}>Choose a personality. Elo is a target difficulty estimate; it is not a certified rating or an exact replica of a real player.</Text>
@@ -730,13 +777,18 @@ export default function App() {
           <Text style={styles.helper}>{selectedOpening.idea}</Text>
         </View>}
 
-        <View style={styles.boardCard}>
+        <View style={[styles.boardCard, fullScreen && tab === 'Play' && styles.boardCardFullscreen]}>
+          {tab === 'Play' && <View style={styles.clockBar}>
+            <View style={styles.clockPlayer}><Text style={styles.clockPlayerName}>{playMode === 'pvp' ? 'BLACK · PLAYER 2' : selectedBot.name.toUpperCase()}</Text><Text style={[styles.clockValue, game.turn() === 'b' && clockStarted && !timeoutSide && styles.clockActive]}>{formatClock(clock.b)}</Text></View>
+            <View style={styles.clockPlayer}><Text style={styles.clockPlayerName}>{playMode === 'pvp' ? 'WHITE · PLAYER 1' : 'YOU · ' + playerElo + ' ELO'}</Text><Text style={[styles.clockValue, game.turn() === 'w' && clockStarted && !timeoutSide && styles.clockActive]}>{formatClock(clock.w)}</Text></View>
+          </View>}
           <View style={styles.boardHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.boardTitle}>{tab === 'Learn' ? selectedOpening.name : tab === 'Play' ? (playMode === 'pvp' ? 'Offline · Pass & Play' : 'You vs Computer') : 'Game review'}</Text>
               <Text style={styles.status}>{aiThinking ? 'Computer is thinking…' : status}</Text>
             </View>
-            <View style={[styles.statusDot, game.isGameOver() && styles.statusDotEnd]} />
+            {tab === 'Play' && <Pressable onPress={() => setFullScreen(value => !value)} style={styles.fullscreenButton}><Text style={styles.fullscreenButtonText}>{fullScreen ? '↙ Exit full screen' : '⛶ Full screen'}</Text></Pressable>}
+            <View style={[styles.statusDot, (game.isGameOver() || timeoutSide) && styles.statusDotEnd]} />
           </View>
 
           {tab === 'Play' && (
@@ -750,7 +802,7 @@ export default function App() {
             </View>
           )}
 
-          <View style={[styles.board, { width: boardSize, height: boardSize }]}>
+          <View style={[styles.board, fullScreen && tab === 'Play' && styles.boardFullscreen, { width: boardSize, height: boardSize }]}>
             {board.map((row, r) => row.map((piece, c) => {
               const square = FILES[c] + String(8 - r);
               const light = (r + c) % 2 === 0;
@@ -924,10 +976,11 @@ export default function App() {
                 <Text style={styles.playerName}>{playMode === 'pvp' ? 'White · Player 1' : 'You'}</Text>
                 <Text style={styles.playerMeta}>{playMode === 'pvp' ? 'White pieces · Player 1' : 'White pieces · ' + playerElo + ' Elo'}</Text>
               </View>
-              {aiThinking ? <ActivityIndicator color={COLORS.green} /> : <Text style={styles.turnLabel}>{game.isGameOver() ? 'FINISHED' : playMode === 'pvp' ? (game.turn() === 'w' ? 'WHITE TO MOVE' : 'BLACK TO MOVE') : game.turn() === 'w' ? 'YOUR TURN' : 'WAITING'}</Text>}
+              {aiThinking ? <ActivityIndicator color={COLORS.green} /> : <Text style={styles.turnLabel}>{timeoutSide ? 'TIME OUT' : game.isGameOver() ? 'FINISHED' : playMode === 'pvp' ? (game.turn() === 'w' ? 'WHITE TO MOVE' : 'BLACK TO MOVE') : game.turn() === 'w' ? 'YOUR TURN' : 'WAITING'}</Text>}
             </View>
           )}
 
+          {tab === 'Play' && fullScreen && <Text style={styles.fullscreenHint}>{clockStarted ? 'Clock running · ' + (game.turn() === 'w' ? 'White' : 'Black') + ' to move' : 'Choose a time control and tap Start game'}</Text>}
           <View style={styles.actions}>
             <Pressable onPress={undo} disabled={!history.length || aiThinking} style={[styles.secondaryButton, (!history.length || aiThinking) && styles.disabledButton]}>
               <Text style={styles.secondaryText}>↶ Undo</Text>
@@ -935,12 +988,13 @@ export default function App() {
             <Pressable onPress={tab === 'Learn' ? playLessonMove : restart} style={styles.primaryButton}>
               <Text style={styles.primaryText}>{tab === 'Learn' ? (currentLesson ? 'Next lesson move  →' : 'Lesson complete ✓') : '↻ New game'}</Text>
             </Pressable>
-            <Pressable onPress={restart} style={styles.secondaryButton}>
+            <Pressable onPress={() => { restart(); resetClock(timeMinutes, false); }} style={styles.secondaryButton}>
               <Text style={styles.secondaryText}>↻</Text>
             </Pressable>
           </View>
         </View>
 
+        {!(fullScreen && tab === 'Play') && <>
         <View style={styles.coachCard}>
           <View style={styles.coachIcon}><Text style={styles.coachIconText}>✦</Text></View>
           <View style={{ flex: 1 }}>
@@ -1000,7 +1054,8 @@ export default function App() {
           </View>
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. Local engine supplied by dawikk-stockfish; online analysis is an optional fallback. Source and licence details are documented in the repository README.</Text>
         </View>
-        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.8.0</Text>
+        </>}
+        <Text style={styles.footer}>CHESS COACH AI  ·  BUILD 0.8.1</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -1039,6 +1094,26 @@ const styles = StyleSheet.create({
   botTag: { color: COLORS.gold, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   botStyle: { color: COLORS.muted, fontSize: 10, lineHeight: 14, minHeight: 30 },
   botSelected: { color: COLORS.green, fontSize: 9, fontWeight: '900', marginTop: 2 },
+  pageFullscreen: { padding: 4, paddingTop: 4, paddingBottom: 6, gap: 6, justifyContent: 'center', flexGrow: 1 },
+  boardCardFullscreen: { padding: 4, borderRadius: 8, gap: 5, justifyContent: 'center', flexGrow: 1 },
+  boardFullscreen: { borderRadius: 3 },
+  fullscreenButton: { backgroundColor: '#34483a', paddingHorizontal: 9, paddingVertical: 8, borderRadius: 9 },
+  fullscreenButtonText: { color: COLORS.green, fontSize: 10, fontWeight: '900' },
+  timeControls: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  timeChip: { backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10 },
+  timeChipActive: { borderColor: COLORS.green, backgroundColor: '#29452f' },
+  timeChipText: { color: COLORS.muted, fontSize: 11, fontWeight: '800' },
+  timeChipTextActive: { color: COLORS.green },
+  clockSetupRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  customTimeInput: { flex: 1, minWidth: 70, color: COLORS.text, backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12 },
+  timeApply: { backgroundColor: '#34483a', paddingHorizontal: 10, paddingVertical: 10, borderRadius: 9 },
+  timeApplyText: { color: COLORS.green, fontSize: 10, fontWeight: '900' },
+  clockBar: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', gap: 8, paddingHorizontal: 2, paddingVertical: 4 },
+  clockPlayer: { flex: 1, backgroundColor: '#202b24', borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  clockPlayerName: { color: COLORS.muted, fontSize: 8, fontWeight: '900', flex: 1 },
+  clockValue: { color: COLORS.text, fontSize: 19, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  clockActive: { color: COLORS.green },
+  fullscreenHint: { color: COLORS.muted, fontSize: 9, textAlign: 'center', marginTop: 3 },
   difficultyCard: { width: '100%', backgroundColor: COLORS.panel, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: COLORS.line, gap: 8 },
   difficultyHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '900' },

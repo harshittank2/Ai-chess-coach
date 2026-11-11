@@ -2,7 +2,7 @@
   "expo": {
     "name": "Chess Coach AI",
     "slug": "chess-coach-ai",
-    "version": "0.8.0",
+    "version": "0.8.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "splash": {
@@ -10,7 +10,7 @@
     },
     "android": {
       "package": "com.harshit.chesscoachai",
-      "versionCode": 11,
+      "versionCode": 12,
       "adaptiveIcon": {
         "backgroundColor": "#080d18"
       }
