@@ -10,10 +10,10 @@ import * as FileSystem from 'expo-file-system';
 import Stockfish from 'dawikk-stockfish';
 
 const COLORS = {
-  bg: '#101714', panel: '#19231e', panel2: '#222f28', line: '#35483c',
-  text: '#f3f7f2', muted: '#9aaca0', green: '#a8ed78',
-  greenDark: '#24452f', light: '#e8eee6', dark: '#78917e',
-  gold: '#f2c66d', red: '#ff7777'
+  bg: '#081A14', panel: '#10271D', panel2: '#193629', line: '#2B4B3A',
+  text: '#F4F0E5', muted: '#A7B5A8', green: '#C4D99A',
+  greenDark: '#294A36', light: '#EFE6D2', dark: '#78927D',
+  gold: '#D9B66F', red: '#E98278'
 };
 const BOT_PROFILES = [
   { id: 'martin', name: 'Martin', elo: 250, level: 'Easy', tag: 'Beginner', style: 'Casual moves · forgiving', mode: 'casual' },
@@ -765,21 +765,14 @@ export default function App() {
       <ScrollView contentContainerStyle={[styles.page, fullScreen && tab === 'Play' && styles.pageFullscreen]} showsVerticalScrollIndicator={false}>
         {!(fullScreen && tab === 'Play') && <View style={styles.header}>
           <View style={styles.brandBlock}>
-            <Text style={styles.eyebrow}>THINK. PLAY. IMPROVE.</Text>
+            <Text style={styles.eyebrow}>THE CHESS TRAINING STUDIO</Text>
             <Text style={styles.brand}>Royal <Text style={styles.brandAccent}>Gambit</Text></Text>
-            <Text style={styles.tagline}>Your personal chess training room</Text>
+            <Text style={styles.tagline}>Think clearly. Play beautifully.</Text>
           </View>
-          <View style={styles.levelBadge}><Text style={styles.levelBadgeText}>♟ BEGINNER</Text></View>
+          <View style={styles.levelBadge}><Text style={styles.levelBadgeText}>♔  {playerElo} ELO</Text></View>
         </View>}
 
-        {!(fullScreen && tab === 'Play') && <View style={styles.tabs}>
-          {/* These are views over one shared game state; changing tabs must never start a new game. */}
-          {['Learn', 'Play', 'Review'].map(item => (
-            <Pressable key={item} onPress={() => switchBoardTab(item)} style={[styles.tab, tab === item && styles.tabActive]}>
-              <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>{item}</Text>
-            </Pressable>
-          ))}
-        </View>}
+
 
         {tab === 'Play' && !fullScreen && (
           <View style={styles.difficultyCard}>
@@ -818,6 +811,26 @@ export default function App() {
             </>}
           </View>
         )}
+
+        {tab === 'Learn' && <View style={styles.homeHero}>
+          <View style={styles.heroTopline}>
+            <Text style={styles.heroEyebrow}>YOUR TRAINING ROOM</Text>
+            <View style={styles.onlinePill}><View style={styles.onlineDot} /><Text style={styles.onlinePillText}>READY TO PLAY</Text></View>
+          </View>
+          <Text style={styles.heroTitle}>Make your next move{ '\n' }count.</Text>
+          <Text style={styles.heroCopy}>Build better habits, sharpen your tactics and understand every position.</Text>
+          <View style={styles.heroActions}>
+            <Pressable onPress={() => switchBoardTab('Play')} style={styles.heroPrimary}><Text style={styles.heroPrimaryText}>♟  Start a game</Text></Pressable>
+            <Pressable onPress={() => switchBoardTab('Review')} style={styles.heroSecondary}><Text style={styles.heroSecondaryText}>Review a game  ↗</Text></Pressable>
+          </View>
+          <View style={styles.heroStats}>
+            <View style={styles.heroStat}><Text style={styles.heroStatValue}>{playerElo}</Text><Text style={styles.heroStatLabel}>YOUR RATING</Text></View>
+            <View style={styles.heroStatDivider} />
+            <View style={styles.heroStat}><Text style={styles.heroStatValue}>{ratedGames}</Text><Text style={styles.heroStatLabel}>GAMES PLAYED</Text></View>
+            <View style={styles.heroStatDivider} />
+            <View style={styles.heroStat}><Text style={styles.heroStatValue}>{OPENINGS.length}</Text><Text style={styles.heroStatLabel}>OPENINGS</Text></View>
+          </View>
+        </View>}
 
         {tab === 'Learn' && <View style={styles.difficultyCard}>
           <Text style={styles.sectionTitle}>Opening library · {OPENINGS.length} lessons</Text>
@@ -871,15 +884,15 @@ export default function App() {
                   style={[styles.square, {
                     width: boardSize / 8,
                     height: boardSize / 8,
-                    backgroundColor: isSelected ? '#d6c45e' : isPremoveSquare ? '#b7a05b' : light ? '#e7c99b' : '#93633e'
+                    backgroundColor: isSelected ? '#d6c45e' : isPremoveSquare ? '#b7a05b' : light ? '#EFE6D2' : '#78927D'
                   }]}
                 >
                   {isTarget && <View style={[styles.target, piece && styles.targetCapture]} />}
                   {!!piece && !(animatedPiece && animatedPiece.from === square) && (
                     <Text style={[styles.piece, {
                       fontSize: Math.max(22, boardSize / 12),
-                      color: piece.color === 'w' ? '#f5dfb5' : '#54351f',
-                      textShadowColor: piece.color === 'w' ? '#6f4a28' : '#e0b77c'
+                      color: piece.color === 'w' ? '#FFF9EC' : '#20382B',
+                      textShadowColor: piece.color === 'w' ? '#78684F' : '#D8D0B9'
                     }]}>{PIECES[piece.color + piece.type.toUpperCase()]}</Text>
                   )}
                   {c === 0 && <Text style={styles.rank}>{8 - r}</Text>}
@@ -889,7 +902,7 @@ export default function App() {
             }))}
             {animatedPiece && (
               <Animated.View pointerEvents="none" style={[styles.movingPiece, { width: boardSize / 8, height: boardSize / 8 }, { transform: animationPosition.getTranslateTransform() }]}>
-                <Text style={[styles.piece, { fontSize: Math.max(22, boardSize / 12), color: animatedPiece.color === 'w' ? '#f5dfb5' : '#54351f', textShadowColor: animatedPiece.color === 'w' ? '#6f4a28' : '#e0b77c' }]}>{animatedPiece.glyph}</Text>
+                <Text style={[styles.piece, { fontSize: Math.max(22, boardSize / 12), color: animatedPiece.color === 'w' ? '#FFF9EC' : '#20382B', textShadowColor: animatedPiece.color === 'w' ? '#78684F' : '#D8D0B9' }]}>{animatedPiece.glyph}</Text>
               </Animated.View>
             )}
           </View>
@@ -1110,23 +1123,33 @@ export default function App() {
           <Text style={styles.licenseNote}>Stockfish is GPLv3 software. Local engine supplied by dawikk-stockfish; online analysis is an optional fallback. Source and licence details are documented in the repository README.</Text>
         </View>
         </>}
-        <Text style={styles.footer}>ROYAL GAMBIT  ·  BUILD 0.8.2</Text>
+        <Text style={styles.footer}>ROYAL GAMBIT  ·  PLAY WITH INTENTION</Text>
       </ScrollView>
+      {!(fullScreen && tab === 'Play') && <View style={styles.bottomNav}>
+        {[
+          { id: 'Learn', icon: '⌂', label: 'Home' },
+          { id: 'Play', icon: '♟', label: 'Play' },
+          { id: 'Review', icon: '▤', label: 'Review' }
+        ].map(item => <Pressable key={item.id} onPress={() => switchBoardTab(item.id)} style={styles.bottomNavItem}>
+          <View style={[styles.bottomNavIcon, tab === item.id && styles.bottomNavIconActive]}><Text style={[styles.bottomNavGlyph, tab === item.id && styles.bottomNavGlyphActive]}>{item.icon}</Text></View>
+          <Text style={[styles.bottomNavLabel, tab === item.id && styles.bottomNavLabelActive]}>{item.label}</Text>
+        </Pressable>)}
+      </View>}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
-  page: { padding: 18, paddingBottom: 38, gap: 16, alignItems: 'center' },
-  header: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 },
+  page: { paddingHorizontal: 17, paddingTop: 14, paddingBottom: 30, gap: 15, alignItems: 'center' },
+  header: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, paddingBottom: 4 },
   brandBlock: { flex: 1 },
-  eyebrow: { fontSize: 9, letterSpacing: 2, color: COLORS.muted, fontWeight: '900' },
-  brand: { fontSize: 27, fontWeight: '900', color: COLORS.text, letterSpacing: -0.8, marginTop: 4 },
-  brandAccent: { color: COLORS.green },
-  tagline: { fontSize: 11, color: COLORS.muted, marginTop: 3 },
-  levelBadge: { borderWidth: 1, borderColor: COLORS.line, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 20, backgroundColor: COLORS.panel },
-  levelBadgeText: { fontSize: 9, color: '#c3cde0', fontWeight: '900' },
+  eyebrow: { fontSize: 9, letterSpacing: 2.2, color: COLORS.gold, fontWeight: '900' },
+  brand: { fontSize: 29, fontWeight: '900', color: COLORS.text, letterSpacing: -1.1, marginTop: 4 },
+  brandAccent: { color: COLORS.gold },
+  tagline: { fontSize: 11, color: COLORS.muted, marginTop: 4, letterSpacing: 0.25 },
+  levelBadge: { borderWidth: 1, borderColor: '#526B4D', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, backgroundColor: '#183326' },
+  levelBadgeText: { fontSize: 10, color: COLORS.gold, fontWeight: '900', letterSpacing: 0.4 },
   tabs: { width: '100%', flexDirection: 'row', backgroundColor: COLORS.panel, padding: 4, borderRadius: 14, borderWidth: 1, borderColor: '#1e2a3e' },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 10 },
   tabActive: { backgroundColor: '#2a3b52' },
@@ -1169,9 +1192,9 @@ const styles = StyleSheet.create({
   clockValue: { color: COLORS.text, fontSize: 19, fontWeight: '900', fontVariant: ['tabular-nums'] },
   clockActive: { color: COLORS.green },
   fullscreenHint: { color: COLORS.muted, fontSize: 9, textAlign: 'center', marginTop: 3 },
-  difficultyCard: { width: '100%', backgroundColor: COLORS.panel, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: COLORS.line, gap: 8 },
+  difficultyCard: { width: '100%', backgroundColor: COLORS.panel, padding: 16, borderRadius: 20, borderWidth: 1, borderColor: COLORS.line, gap: 11 },
   difficultyHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '900' },
+  sectionTitle: { color: COLORS.text, fontSize: 16, fontWeight: '900', letterSpacing: -0.2 },
   onlineTag: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   helper: { color: COLORS.muted, fontSize: 11, lineHeight: 17 },
   levels: { flexDirection: 'row', gap: 8, marginTop: 4 },
@@ -1179,9 +1202,9 @@ const styles = StyleSheet.create({
   levelButtonActive: { backgroundColor: '#29452f', borderColor: '#5f9e50' },
   levelText: { color: '#a8b4c8', fontWeight: '800', fontSize: 12 },
   levelTextActive: { color: COLORS.green },
-  boardCard: { width: '100%', backgroundColor: COLORS.panel, borderRadius: 20, padding: 12, borderWidth: 1, borderColor: '#26344a', alignItems: 'center' },
-  boardHeader: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4, paddingBottom: 12 },
-  boardTitle: { fontSize: 17, color: COLORS.text, fontWeight: '900' },
+  boardCard: { width: '100%', backgroundColor: '#10271D', borderRadius: 22, padding: 13, borderWidth: 1, borderColor: '#31513D', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 14, shadowOffset: { width: 0, height: 7 }, elevation: 5 },
+  boardHeader: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4, paddingBottom: 13 },
+  boardTitle: { fontSize: 17, color: COLORS.text, fontWeight: '900', letterSpacing: -0.3 },
   status: { color: COLORS.muted, fontSize: 11, marginTop: 4 },
   statusDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: COLORS.green },
   statusDotEnd: { backgroundColor: COLORS.gold },
@@ -1194,7 +1217,7 @@ const styles = StyleSheet.create({
   playerMeta: { color: COLORS.muted, fontSize: 10, marginTop: 2 },
   playerRating: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   turnLabel: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  board: { position: 'relative', flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden', borderRadius: 5, alignSelf: 'center' },
+  board: { position: 'relative', flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden', borderRadius: 8, alignSelf: 'center', borderWidth: 2, borderColor: '#D8C9A9' },
   square: { alignItems: 'center', justifyContent: 'center' },
   piece: { fontWeight: '400', textAlign: 'center', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 2 },
   rank: { position: 'absolute', top: 2, left: 3, fontSize: 8, color: '#17211c', fontWeight: '900' },
@@ -1202,12 +1225,12 @@ const styles = StyleSheet.create({
   target: { position: 'absolute', width: 12, height: 12, borderRadius: 8, backgroundColor: '#213d2b', opacity: 0.65 },
   targetCapture: { width: '86%', height: '86%', backgroundColor: 'transparent', borderWidth: 3, borderColor: '#213d2b' },
   actions: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
-  primaryButton: { flex: 1, backgroundColor: COLORS.green, paddingVertical: 13, borderRadius: 11, alignItems: 'center' },
-  primaryText: { fontSize: 12, color: '#142019', fontWeight: '900' },
-  secondaryButton: { backgroundColor: '#202e43', paddingHorizontal: 13, paddingVertical: 13, borderRadius: 11, alignItems: 'center' },
-  secondaryText: { color: '#d7deeb', fontWeight: '800', fontSize: 12 },
+  primaryButton: { flex: 1, backgroundColor: COLORS.gold, paddingVertical: 14, borderRadius: 13, alignItems: 'center' },
+  primaryText: { fontSize: 12, color: '#17251B', fontWeight: '900', letterSpacing: 0.2 },
+  secondaryButton: { backgroundColor: '#254333', paddingHorizontal: 13, paddingVertical: 13, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#3C6049' },
+  secondaryText: { color: '#E5EBDD', fontWeight: '800', fontSize: 12 },
   disabledButton: { opacity: 0.4 },
-  coachCard: { width: '100%', flexDirection: 'row', gap: 12, backgroundColor: '#14241e', borderWidth: 1, borderColor: '#2b4a37', borderRadius: 16, padding: 14 },
+  coachCard: { width: '100%', flexDirection: 'row', gap: 12, backgroundColor: '#142D21', borderWidth: 1, borderColor: '#35583E', borderRadius: 18, padding: 15 },
   coachIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#294a34', alignItems: 'center', justifyContent: 'center' },
   coachIconText: { fontSize: 22, color: COLORS.green },
   coachTitleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
@@ -1217,14 +1240,14 @@ const styles = StyleSheet.create({
   sectionHeader: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
   counter: { color: COLORS.muted, fontSize: 11, fontWeight: '700' },
   lessonList: { width: '100%', gap: 10 },
-  lessonRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: COLORS.panel, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#202c40' },
+  lessonRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: COLORS.panel, borderRadius: 16, padding: 13, borderWidth: 1, borderColor: COLORS.line },
   lessonNumber: { width: 30, height: 30, borderRadius: 10, backgroundColor: '#29394f', alignItems: 'center', justifyContent: 'center' },
   lessonDone: { backgroundColor: '#285037' },
   lessonNumberText: { fontSize: 10, fontWeight: '900', color: '#d4deec' },
   lessonTitle: { fontSize: 12, fontWeight: '900', color: '#edf1f8', marginTop: 1 },
   lessonDesc: { fontSize: 11, lineHeight: 16, color: '#8e9bb3', marginTop: 4 },
   lessonSan: { color: COLORS.green, fontSize: 12, fontWeight: '900', paddingTop: 4 },
-  reviewCard: { width: '100%', backgroundColor: COLORS.panel, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#202c40', gap: 10 },
+  reviewCard: { width: '100%', backgroundColor: COLORS.panel, padding: 15, borderRadius: 18, borderWidth: 1, borderColor: COLORS.line, gap: 10 },
   moveRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#202c40' },
   moveNumber: { width: 24, color: COLORS.muted, fontSize: 12 },
   moveSan: { flex: 1, color: '#d7deeb', fontSize: 13, fontWeight: '700' },
@@ -1240,7 +1263,33 @@ const styles = StyleSheet.create({
   featureIcon: { color: COLORS.green, fontSize: 20 },
   featureName: { color: '#c6d0df', fontSize: 9, fontWeight: '800' },
   licenseNote: { color: '#78869e', fontSize: 9, lineHeight: 14 },
-  footer: { width: '100%', textAlign: 'center', fontSize: 9, letterSpacing: 2, color: '#59667c', marginTop: 2 },
+  footer: { width: '100%', textAlign: 'center', fontSize: 9, letterSpacing: 2, color: '#718578', marginTop: 8, marginBottom: 4 },
+  homeHero: { width: '100%', backgroundColor: '#142F22', borderRadius: 24, padding: 19, borderWidth: 1, borderColor: '#456447', gap: 10, overflow: 'hidden' },
+  heroTopline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  heroEyebrow: { color: '#D9B66F', fontSize: 9, fontWeight: '900', letterSpacing: 1.8 },
+  onlinePill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#203F2C', borderRadius: 20, paddingHorizontal: 9, paddingVertical: 6 },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#C4D99A' },
+  onlinePillText: { color: '#DCE8D1', fontSize: 8, fontWeight: '900', letterSpacing: 0.7 },
+  heroTitle: { color: '#F4F0E5', fontSize: 29, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8, marginTop: 6 },
+  heroCopy: { color: '#B7C7B8', fontSize: 12, lineHeight: 18, maxWidth: 290 },
+  heroActions: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 5 },
+  heroPrimary: { backgroundColor: '#D9B66F', paddingHorizontal: 15, paddingVertical: 12, borderRadius: 12 },
+  heroPrimaryText: { color: '#18271C', fontSize: 11, fontWeight: '900' },
+  heroSecondary: { paddingHorizontal: 11, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: '#59704F' },
+  heroSecondaryText: { color: '#E8E6D9', fontSize: 10, fontWeight: '800' },
+  heroStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 13, marginTop: 5, borderTopWidth: 1, borderTopColor: '#36563B' },
+  heroStat: { flex: 1, gap: 3 },
+  heroStatValue: { color: '#F4F0E5', fontSize: 19, fontWeight: '900', letterSpacing: -0.5 },
+  heroStatLabel: { color: '#A9BCA8', fontSize: 7, fontWeight: '900', letterSpacing: 0.8 },
+  heroStatDivider: { width: 1, height: 29, backgroundColor: '#466247', marginHorizontal: 10 },
+  bottomNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingTop: 9, paddingBottom: 7, paddingHorizontal: 22, backgroundColor: '#0C2118', borderTopWidth: 1, borderTopColor: '#294534' },
+  bottomNavItem: { flex: 1, alignItems: 'center', gap: 3 },
+  bottomNavIcon: { width: 54, height: 30, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  bottomNavIconActive: { backgroundColor: '#294A36' },
+  bottomNavGlyph: { color: '#91A494', fontSize: 19, fontWeight: '800' },
+  bottomNavGlyphActive: { color: '#D9B66F' },
+  bottomNavLabel: { color: '#91A494', fontSize: 9, fontWeight: '800' },
+  bottomNavLabelActive: { color: '#E8E6D9' },
   movingPiece: { position: 'absolute', left: 0, top: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
   reviewTopBar: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 8 },
   reviewCoachAvatar: { width: 62, height: 70, borderRadius: 14, backgroundColor: '#55433a', alignItems: 'center', justifyContent: 'center' },
