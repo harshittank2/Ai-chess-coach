@@ -885,7 +885,6 @@ export default function App() {
                   onPress={() => selectSquare(square)}
                   style={[styles.square, {
                     flex: 1,
-                    height: boardSize / 8,
                     backgroundColor: isSelected ? '#d6c45e' : isPremoveSquare ? '#b7a05b' : light ? '#EFE6D2' : '#78927D'
                   }]}
                 >
@@ -1222,7 +1221,7 @@ const styles = StyleSheet.create({
   playerRating: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   turnLabel: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   board: { position: 'relative', flexDirection: 'column', flexWrap: 'nowrap', overflow: 'hidden', borderRadius: 8, alignSelf: 'center', borderWidth: 2, borderColor: '#D8C9A9' },
-  boardRank: { width: '100%', height: '12.5%', flexDirection: 'row', flexWrap: 'nowrap' },
+  boardRank: { width: '100%', flex: 1, flexDirection: 'row', flexWrap: 'nowrap' },
   square: { alignItems: 'center', justifyContent: 'center' },
   piece: { fontWeight: '400', textAlign: 'center', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 2 },
   rank: { position: 'absolute', top: 2, left: 3, fontSize: 8, color: '#17211c', fontWeight: '900' },
