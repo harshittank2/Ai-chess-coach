@@ -6,6 +6,10 @@ A mobile-first chess training app built with **Expo, React Native, and chess.js*
 
 > **Status:** Active development · Android APK builds are produced with GitHub Actions.
 
+## Interface
+
+Royal Gambit uses a premium forest-green, warm-ivory and muted-gold visual system, with a persistent bottom navigation and a training dashboard for quick access to play and review. The board, lessons and review workspace share the same visual language.
+
 ## Features
 
 ### ♟ Play
