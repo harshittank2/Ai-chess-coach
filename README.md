@@ -57,3 +57,11 @@ For a native Android development build, generate the Android project and build i
 
 ## Feedback
 Found a bug or have a feature idea? Open an issue with your device model, Android version, app version / build number, reproduction steps, and relevant screenshots or logs (with personal information removed).
+## Feedback & Contact
+
+Have a bug report, feature request, or suggestion? We'd love to hear from you.
+
+- **Email:** [harshittank2@gmail.com](mailto:harshittank2@gmail.com)
+- **GitHub Issues:** https://github.com/harshittank2/Royal-Gambit/issues
+
+When reporting a bug, include your device model, Android version, app version, steps to reproduce, and screenshots or logs with personal information removed.
