@@ -870,7 +870,9 @@ export default function App() {
           )}
 
           <View style={[styles.board, fullScreen && tab === 'Play' && styles.boardFullscreen, { width: boardSize, height: boardSize }]}>
-            {board.map((row, r) => row.map((piece, c) => {
+            {board.map((row, r) => (
+              <View key={'rank-' + r} style={styles.boardRank}>
+                {row.map((piece, c) => {
               const square = FILES[c] + String(8 - r);
               const light = (r + c) % 2 === 0;
               const isTarget = targets.includes(square);
@@ -882,7 +884,7 @@ export default function App() {
                   disabled={false}
                   onPress={() => selectSquare(square)}
                   style={[styles.square, {
-                    width: boardSize / 8,
+                    flex: 1,
                     height: boardSize / 8,
                     backgroundColor: isSelected ? '#d6c45e' : isPremoveSquare ? '#b7a05b' : light ? '#EFE6D2' : '#78927D'
                   }]}
@@ -898,8 +900,10 @@ export default function App() {
                   {c === 0 && <Text style={styles.rank}>{8 - r}</Text>}
                   {r === 7 && <Text style={styles.file}>{FILES[c]}</Text>}
                 </Pressable>
-              );
-            }))}
+                );
+                })}
+              </View>
+            ))}
             {animatedPiece && (
               <Animated.View pointerEvents="none" style={[styles.movingPiece, { width: boardSize / 8, height: boardSize / 8 }, { transform: animationPosition.getTranslateTransform() }]}>
                 <Text style={[styles.piece, { fontSize: Math.max(22, boardSize / 12), color: animatedPiece.color === 'w' ? '#FFF9EC' : '#20382B', textShadowColor: animatedPiece.color === 'w' ? '#78684F' : '#D8D0B9' }]}>{animatedPiece.glyph}</Text>
@@ -1217,7 +1221,8 @@ const styles = StyleSheet.create({
   playerMeta: { color: COLORS.muted, fontSize: 10, marginTop: 2 },
   playerRating: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   turnLabel: { color: COLORS.green, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  board: { position: 'relative', flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden', borderRadius: 8, alignSelf: 'center', borderWidth: 2, borderColor: '#D8C9A9' },
+  board: { position: 'relative', flexDirection: 'column', flexWrap: 'nowrap', overflow: 'hidden', borderRadius: 8, alignSelf: 'center', borderWidth: 2, borderColor: '#D8C9A9' },
+  boardRank: { width: '100%', height: '12.5%', flexDirection: 'row', flexWrap: 'nowrap' },
   square: { alignItems: 'center', justifyContent: 'center' },
   piece: { fontWeight: '400', textAlign: 'center', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 2 },
   rank: { position: 'absolute', top: 2, left: 3, fontSize: 8, color: '#17211c', fontWeight: '900' },
